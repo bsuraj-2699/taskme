@@ -22,9 +22,10 @@ from models import (  # noqa: F401 — registers all mappers
     ReportSchedule,
     Task,
     TaskAttachment,
+    TaskComment,
     User,
 )
-from routers import auth, notifications, reports, tasks, users
+from routers import analytics, auth, comments, notifications, reports, tasks, users
 from routers.reports import _run_report_job, _get_or_create_schedule
 from apscheduler.triggers.cron import CronTrigger
 
@@ -77,10 +78,11 @@ def _stop_scheduler() -> None:
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[str(settings.backend_cors_origin)],
+    allow_origins=[str(settings.backend_cors_origin).rstrip("/")],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
 )
 
 app.state.limiter = auth.limiter
@@ -113,6 +115,8 @@ def health() -> Any:
 
 app.include_router(auth.router)
 app.include_router(tasks.router)
+app.include_router(comments.router)
 app.include_router(users.router)
 app.include_router(notifications.router)
 app.include_router(reports.router)
+app.include_router(analytics.router)

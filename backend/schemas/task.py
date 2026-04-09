@@ -31,6 +31,8 @@ class TaskOut(BaseModel):
     attachment_name: str | None = None
     # New multi-attachment list
     attachments: list[AttachmentOut] = []
+    # Comment count for list views (populated from ORM property)
+    comment_count: int = 0
 
 
 class TaskCreate(BaseModel):

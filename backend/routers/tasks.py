@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import mimetypes
 import os
 from pathlib import Path
 from typing import Any
@@ -373,12 +374,58 @@ def download_attachment(
         if not path.exists():
             raise http_error(404, "File missing on disk", 404)
 
-        return FileResponse(path=str(path), filename=att.file_name)
+        return FileResponse(
+            path=str(path),
+            filename=att.file_name,
+            media_type="application/octet-stream",
+        )
     except Exception as e:
         if hasattr(e, "status_code"):
             raise
         logger.exception("download attachment failed")
         raise http_error(500, "Failed to download attachment", 500)
+
+
+@router.get("/{task_id}/attachments/{attachment_id}/preview")
+def preview_attachment(
+    task_id: UUID,
+    attachment_id: UUID,
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Any:
+    """Serve the file with its real MIME type so the browser can render inline."""
+    try:
+        task = _get_task_or_404(db, task_id)
+        _ensure_task_access(task, user)
+
+        att = db.scalar(
+            select(TaskAttachment).where(
+                TaskAttachment.id == attachment_id,
+                TaskAttachment.task_id == task_id,
+            )
+        )
+        if not att:
+            raise http_error(404, "Attachment not found", 404)
+
+        path = Path(att.file_path)
+        if not path.exists():
+            raise http_error(404, "File missing on disk", 404)
+
+        mime, _ = mimetypes.guess_type(att.file_name)
+        if not mime:
+            mime = "application/octet-stream"
+
+        return FileResponse(
+            path=str(path),
+            filename=att.file_name,
+            media_type=mime,
+            headers={"Content-Disposition": "inline"},
+        )
+    except Exception as e:
+        if hasattr(e, "status_code"):
+            raise
+        logger.exception("preview attachment failed")
+        raise http_error(500, "Failed to preview attachment", 500)
 
 
 # Legacy single-file download (kept for backwards compat)
@@ -399,7 +446,11 @@ def download_file(
         if not path.exists():
             raise http_error(404, "Attachment missing", 404)
 
-        return FileResponse(path=str(path), filename=task.attachment_name)
+        return FileResponse(
+            path=str(path),
+            filename=task.attachment_name,
+            media_type="application/octet-stream",
+        )
     except Exception as e:
         if hasattr(e, "status_code"):
             raise

@@ -43,3 +43,8 @@ class Task(Base):
     assigner = relationship("User", foreign_keys=[assigned_by], back_populates="tasks_assigned_by", lazy="selectin")
     notifications = relationship("Notification", back_populates="task", cascade="all, delete-orphan", lazy="selectin")
     attachments = relationship("TaskAttachment", back_populates="task", cascade="all, delete-orphan", lazy="selectin")
+    comments = relationship("TaskComment", back_populates="task", cascade="all, delete-orphan", lazy="selectin", order_by="TaskComment.created_at.asc()")
+
+    @property
+    def comment_count(self) -> int:
+        return len(self.comments) if self.comments else 0
