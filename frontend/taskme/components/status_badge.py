@@ -10,7 +10,7 @@ def status_badge(status: str) -> rx.Component:
         rx.cond(
             status == "overdue",
             "red",
-            rx.cond(status == "in_progress", "amber", "orange"),
+            rx.cond(status == "in_progress", "yellow", "orange"),
         ),
     )
     label = rx.cond(

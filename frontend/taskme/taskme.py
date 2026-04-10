@@ -20,6 +20,14 @@ def index() -> rx.Component:
 def _style() -> dict:
     return {
         "font_family": "Inter, ui-sans-serif, system-ui",
+        ".taskme-login-submit": {
+            "transition": "transform 0.2s ease, box-shadow 0.2s ease",
+            "box_shadow": "0 4px 14px rgba(249, 115, 22, 0.28)",
+        },
+        ".taskme-login-submit:hover": {
+            "transform": "translateY(-2px)",
+            "box_shadow": "0 10px 28px rgba(249, 115, 22, 0.38)",
+        },
     }
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from datetime import date, datetime
 from typing import Any, TypedDict
 
 import reflex as rx
@@ -11,6 +12,40 @@ from taskme.state.auth_state import AuthState
 
 def _api_base() -> str:
     return os.getenv("API_BASE_URL", "http://localhost:8000").rstrip("/")
+
+
+def _task_priority_from_api(raw: Any) -> str:
+    p = str(raw or "medium").strip().lower()
+    return p if p in ("low", "medium", "high") else "medium"
+
+
+def _parse_iso_date(s: str) -> date | None:
+    raw = (s or "").strip()
+    if len(raw) < 10:
+        return None
+    try:
+        return date(int(raw[0:4]), int(raw[5:7]), int(raw[8:10]))
+    except (ValueError, TypeError):
+        return None
+
+
+def _deadline_label_and_color(deadline_str: str, status: str) -> tuple[str, str]:
+    if status == "done":
+        return ("Completed", "#16A34A")
+    dl = _parse_iso_date(deadline_str)
+    if dl is None:
+        return ("No deadline set", "#64748B")
+    today = date.today()
+    days = (dl - today).days
+    if days < 0:
+        return ("Overdue", "#DC2626")
+    if days == 0:
+        return ("Due today", "#CA8A04")
+    if days == 1:
+        return ("Due tomorrow", "#CA8A04")
+    if days <= 3:
+        return (f"Due in {days} days", "#CA8A04")
+    return (f"Due in {days} days", "#15803D")
 
 
 class AttachmentDict(TypedDict):
@@ -50,6 +85,12 @@ class TaskDict(TypedDict):
     attachments: list[AttachmentDict]
     comment_count: int
     submission_count: int
+    priority: str
+    created_at: str
+    updated_at: str
+    task_type: str
+    deadline_label: str
+    deadline_label_color: str
 
 
 class EmployeeWorkloadDict(TypedDict):
@@ -194,6 +235,56 @@ class TaskState(AuthState):
         return len([t for t in self.tasks if t.get("status") == "overdue"])
 
     @rx.var
+    def employee_stat_pending(self) -> int:
+        return len([t for t in self.tasks if t.get("status") == "pending"])
+
+    @rx.var
+    def employee_stat_overdue(self) -> int:
+        """Not done and deadline before today (uses deadline + status only)."""
+        today = date.today()
+        n = 0
+        for t in self.tasks:
+            if t.get("status") == "done":
+                continue
+            dl = _parse_iso_date(str(t.get("deadline") or ""))
+            if dl is not None and dl < today:
+                n += 1
+        return n
+
+    @rx.var
+    def employee_stat_completed_today(self) -> int:
+        today_s = date.today().isoformat()
+        n = 0
+        for t in self.tasks:
+            if t.get("status") != "done":
+                continue
+            u = str(t.get("updated_at") or "")
+            if len(u) >= 10 and u[:10] == today_s:
+                n += 1
+        return n
+
+    @rx.var
+    def employee_stat_avg_completion_days(self) -> str:
+        """Mean days from created_at to updated_at for done tasks."""
+        deltas: list[float] = []
+        for t in self.tasks:
+            if t.get("status") != "done":
+                continue
+            c_raw, u_raw = str(t.get("created_at") or ""), str(t.get("updated_at") or "")
+            if not c_raw or not u_raw:
+                continue
+            try:
+                c = datetime.fromisoformat(c_raw.replace("Z", "+00:00"))
+                u = datetime.fromisoformat(u_raw.replace("Z", "+00:00"))
+                days = max(0.0, (u - c).total_seconds() / 86400.0)
+                deltas.append(days)
+            except (ValueError, TypeError):
+                continue
+        if not deltas:
+            return "—"
+        return f"{sum(deltas) / len(deltas):.1f} days"
+
+    @rx.var
     def employee_users(self) -> list[UserDict]:
         return [u for u in self.users if u.get("role") == "employee"]
 
@@ -216,6 +307,14 @@ class TaskState(AuthState):
     @rx.var
     def analytics_avg_completion(self) -> str:
         return str(self.analytics_data.get("avg_completion_days", 0))
+
+    @rx.var
+    def latest_eod_generated_at_label(self) -> str:
+        rows = self.eod_reports
+        if not rows:
+            return "—"
+        g = rows[0].get("generated_at")
+        return str(g) if g is not None else "—"
 
     # ── Basic setters ───────────────────────────────────────────────────────
 
@@ -280,15 +379,19 @@ class TaskState(AuthState):
 
     def _build_task_dict(self, t: dict[str, Any], user_name_by_id: dict[str, str] | None = None) -> TaskDict:
         uid = str(t.get("assigned_to") or "")
+        deadline_str = str(t.get("deadline") or "")
+        st = str(t.get("status") or "pending")
+        dlbl, dcol = _deadline_label_and_color(deadline_str, st)
+        tt = str(t.get("task_type") or "").strip() or "General"
         return TaskDict(
             id=str(t.get("id") or ""),
             title=str(t.get("title") or ""),
             description=str(t.get("description") or ""),
             assigned_to=uid,
             assigned_to_name=(user_name_by_id or {}).get(uid, ""),
-            status=str(t.get("status") or "pending"),
+            status=st,
             progress=int(t.get("progress") or 0),
-            deadline=str(t.get("deadline") or ""),
+            deadline=deadline_str,
             attachment_name=str(t.get("attachment_name") or ""),
             attachments=[
                 AttachmentDict(id=str(a.get("id") or ""), file_name=str(a.get("file_name") or ""),
@@ -297,6 +400,12 @@ class TaskState(AuthState):
             ],
             comment_count=int(t.get("comment_count") or 0),
             submission_count=int(t.get("submission_count") or 0),
+            priority=_task_priority_from_api(t.get("priority")),
+            created_at=str(t.get("created_at") or ""),
+            updated_at=str(t.get("updated_at") or ""),
+            task_type=tt,
+            deadline_label=dlbl,
+            deadline_label_color=dcol,
         )
 
     # ── Data loaders ────────────────────────────────────────────────────────
@@ -561,6 +670,9 @@ class TaskState(AuthState):
 
     def set_report_active(self, v: str) -> None:
         self.report_schedule_active = v == "active"
+
+    def set_report_schedule_active_bool(self, checked: bool) -> None:
+        self.report_schedule_active = bool(checked)
 
     async def save_report_schedule(self) -> None:
         r = await self.api("POST", "/api/reports/schedule",
