@@ -23,11 +23,14 @@ from models import (  # noqa: F401 — registers all mappers
     Task,
     TaskAttachment,
     TaskComment,
+    TaskSubmission,
     User,
 )
-from routers import analytics, auth, comments, notifications, reports, tasks, users
+from routers import analytics, auth, comments, notifications, reports, submissions, tasks, users
 from routers.reports import _run_report_job, _get_or_create_schedule
+from core.followup import run_followup_job
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -65,6 +68,23 @@ def _start_eod_scheduler() -> None:
                     pass
     except Exception:
         logger.exception("Failed to start EOD scheduler")
+
+
+@app.on_event("startup")
+def _start_followup_scheduler() -> None:
+    """Schedule the auto follow-up job to run every hour."""
+    try:
+        scheduler = get_scheduler()
+        if not scheduler.running:
+            scheduler.start()
+        scheduler.add_job(
+            func=run_followup_job,
+            trigger=IntervalTrigger(hours=1),
+            id="followup_check",
+            replace_existing=True,
+        )
+    except Exception:
+        logger.exception("Failed to start follow-up scheduler")
 
 
 @app.on_event("shutdown")
@@ -116,6 +136,7 @@ def health() -> Any:
 app.include_router(auth.router)
 app.include_router(tasks.router)
 app.include_router(comments.router)
+app.include_router(submissions.router)
 app.include_router(users.router)
 app.include_router(notifications.router)
 app.include_router(reports.router)

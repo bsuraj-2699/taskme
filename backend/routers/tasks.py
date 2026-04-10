@@ -466,6 +466,7 @@ def update_progress(
     db: Session = Depends(get_db),
 ) -> Any:
     try:
+        from datetime import UTC, datetime as dt
         task = _get_task_or_404(db, task_id)
         if task.assigned_to != user.id:
             raise http_error(403, "Forbidden", 403)
@@ -478,6 +479,9 @@ def update_progress(
             task.status = TaskStatus.in_progress
         else:
             task.status = TaskStatus.pending
+
+        # Bump activity timestamp
+        task.last_activity_at = dt.now(UTC)
 
         db.commit()
         db.refresh(task)

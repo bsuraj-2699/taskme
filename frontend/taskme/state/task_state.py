@@ -19,6 +19,15 @@ class AttachmentDict(TypedDict):
     uploaded_at: str
 
 
+class SubmissionDict(TypedDict):
+    id: str
+    file_name: str
+    note: str
+    uploaded_at: str
+    uploaded_by: str
+    uploader_name: str
+
+
 class CommentDict(TypedDict):
     id: str
     task_id: str
@@ -40,6 +49,7 @@ class TaskDict(TypedDict):
     attachment_name: str
     attachments: list[AttachmentDict]
     comment_count: int
+    submission_count: int
 
 
 class EmployeeWorkloadDict(TypedDict):
@@ -68,6 +78,23 @@ class UserDict(TypedDict):
     role: str
 
 
+class ReportSubmissionDict(TypedDict):
+    id: str
+    file_name: str
+    uploaded_at: str
+    task_id: str
+
+
+class ReportTaskDict(TypedDict):
+    id: str
+    title: str
+    assigned_to_name: str
+    status: str
+    progress: int
+    deadline: str
+    submissions: list[ReportSubmissionDict]
+
+
 class TaskState(AuthState):
     tasks: list[TaskDict] = []
     users: list[UserDict] = []
@@ -77,7 +104,6 @@ class TaskState(AuthState):
     status_filter: str = "all"
     sort_deadline_asc: bool = True
 
-    # Add-task dialog
     show_add_dialog: bool = False
     new_title: str = ""
     new_description: str = ""
@@ -86,20 +112,16 @@ class TaskState(AuthState):
 
     toast: str = ""
 
-    # Legacy single-attach dialog
     show_attach_dialog: bool = False
     attach_task_id: str = ""
 
-    # Staged files for add-task dialog
     pending_file_names: list[str] = []
     _pending_files_raw: list[dict] = []
 
-    # Reassign dialog
     show_reassign_dialog: bool = False
     reassign_task_id: str = ""
     reassign_assigned_to: str = ""
 
-    # Edit task dialog
     show_edit_dialog: bool = False
     edit_task_id: str = ""
     edit_title: str = ""
@@ -108,7 +130,6 @@ class TaskState(AuthState):
     edit_deadline: str = ""
     edit_attachments: list[AttachmentDict] = []
 
-    # EOD Reports
     eod_reports: list[dict] = []
     report_schedule_time: str = "18:00"
     report_schedule_timezone: str = "Asia/Kolkata"
@@ -117,8 +138,8 @@ class TaskState(AuthState):
     selected_report_content: str = ""
     selected_report_id: str = ""
     selected_report_data: dict = {}
+    report_tasks: list[ReportTaskDict] = []
 
-    # ── Comments ────────────────────────────────────────────────────────────
     show_comments_dialog: bool = False
     comments_task_id: str = ""
     comments_task_title: str = ""
@@ -126,16 +147,21 @@ class TaskState(AuthState):
     new_comment_body: str = ""
     comments_loading: bool = False
 
-    # ── Analytics ───────────────────────────────────────────────────────────
     analytics_data: dict = {}
     analytics_loading: bool = False
 
-    # ── File Preview ────────────────────────────────────────────────────────
     show_preview_dialog: bool = False
     preview_url: str = ""
     preview_file_name: str = ""
     preview_is_image: bool = False
     preview_is_pdf: bool = False
+
+    # ── Submissions ─────────────────────────────────────────────────────────
+    show_submissions_dialog: bool = False
+    submissions_task_id: str = ""
+    submissions_task_title: str = ""
+    submissions: list[SubmissionDict] = []
+    submissions_loading: bool = False
 
     # ── Computed vars ───────────────────────────────────────────────────────
 
@@ -164,6 +190,10 @@ class TaskState(AuthState):
         return len([t for t in self.tasks if t.get("status") == "done"])
 
     @rx.var
+    def overdue_tasks_count(self) -> int:
+        return len([t for t in self.tasks if t.get("status") == "overdue"])
+
+    @rx.var
     def employee_users(self) -> list[UserDict]:
         return [u for u in self.users if u.get("role") == "employee"]
 
@@ -187,7 +217,7 @@ class TaskState(AuthState):
     def analytics_avg_completion(self) -> str:
         return str(self.analytics_data.get("avg_completion_days", 0))
 
-    # ── Basic setters / dialog toggles ──────────────────────────────────────
+    # ── Basic setters ───────────────────────────────────────────────────────
 
     def toggle_sort_deadline(self) -> None:
         self.sort_deadline_asc = not self.sort_deadline_asc
@@ -238,8 +268,7 @@ class TaskState(AuthState):
 
     @rx.event
     async def set_pending_file_names(self, files: list[rx.UploadFile]) -> None:
-        raw = []
-        names = []
+        raw, names = [], []
         for f in files:
             data = await f.read()
             raw.append({"name": f.name, "data": list(data)})
@@ -262,14 +291,12 @@ class TaskState(AuthState):
             deadline=str(t.get("deadline") or ""),
             attachment_name=str(t.get("attachment_name") or ""),
             attachments=[
-                AttachmentDict(
-                    id=str(a.get("id") or ""),
-                    file_name=str(a.get("file_name") or ""),
-                    uploaded_at=str(a.get("uploaded_at") or ""),
-                )
+                AttachmentDict(id=str(a.get("id") or ""), file_name=str(a.get("file_name") or ""),
+                               uploaded_at=str(a.get("uploaded_at") or ""))
                 for a in (t.get("attachments") or [])
             ],
             comment_count=int(t.get("comment_count") or 0),
+            submission_count=int(t.get("submission_count") or 0),
         )
 
     # ── Data loaders ────────────────────────────────────────────────────────
@@ -284,12 +311,9 @@ class TaskState(AuthState):
             r2 = await self.api("GET", "/api/users/")
             users: list[UserDict] = []
             if r2.status_code == 200:
-                raw_users: list[dict[str, Any]] = r2.json()
-                users = [
-                    UserDict(id=str(u.get("id") or ""), name=str(u.get("name") or ""),
-                             username=str(u.get("username") or ""), role=str(u.get("role") or ""))
-                    for u in raw_users
-                ]
+                users = [UserDict(id=str(u.get("id") or ""), name=str(u.get("name") or ""),
+                                  username=str(u.get("username") or ""), role=str(u.get("role") or ""))
+                         for u in r2.json()]
                 self.users = users
             else:
                 self.error = "Failed to load users."
@@ -323,33 +347,28 @@ class TaskState(AuthState):
         try:
             deadline = self.new_deadline
             if deadline and "/" in deadline:
-                parts = deadline.split("/")
-                if len(parts) == 3:
-                    deadline = f"{parts[2]}-{parts[0].zfill(2)}-{parts[1].zfill(2)}"
+                p = deadline.split("/")
+                if len(p) == 3:
+                    deadline = f"{p[2]}-{p[0].zfill(2)}-{p[1].zfill(2)}"
             payload = {"title": self.new_title, "description": self.new_description,
                        "assigned_to": self.new_assigned_to, "deadline": deadline}
             r = await self.api("POST", "/api/tasks/", json=payload)
             if r.status_code != 200:
-                try:
-                    detail = r.json()
-                except Exception:
-                    detail = r.text
-                self.toast = f"Failed to create task ({r.status_code}): {detail}"
+                self.toast = f"Failed to create task ({r.status_code})"
                 return
             task_id = r.json().get("id")
             raw_files = list(self._pending_files_raw)
             if not raw_files and files:
                 for f in files:
-                    data = await f.read()
-                    raw_files.append({"name": f.name, "data": list(data)})
+                    raw_files.append({"name": f.name, "data": list(await f.read())})
             if raw_files and task_id:
                 headers = {"Authorization": f"Bearer {self.access_token}"} if self.access_token else {}
-                file_tuples = [("files", (entry["name"], bytes(entry["data"]))) for entry in raw_files]
+                file_tuples = [("files", (e["name"], bytes(e["data"]))) for e in raw_files]
                 async with httpx.AsyncClient(timeout=120.0) as client:
-                    upload_r = await client.post(f"{_api_base()}/api/tasks/{task_id}/attach",
-                                                 files=file_tuples, headers=headers)
-                if upload_r.status_code != 200:
-                    self.toast = f"Task created but file upload failed ({upload_r.status_code})."
+                    ur = await client.post(f"{_api_base()}/api/tasks/{task_id}/attach",
+                                           files=file_tuples, headers=headers)
+                if ur.status_code != 200:
+                    self.toast = f"Task created but file upload failed ({ur.status_code})."
             self.show_add_dialog = False
             self.pending_file_names = []
             self._pending_files_raw = []
@@ -357,26 +376,6 @@ class TaskState(AuthState):
             await self.load_ceo_dashboard()
         except Exception as e:
             self.toast = f"Failed to create task: {e}"
-
-    async def create_task(self) -> None:
-        self.toast = ""
-        try:
-            deadline = self.new_deadline
-            if deadline and "/" in deadline:
-                parts = deadline.split("/")
-                if len(parts) == 3:
-                    deadline = f"{parts[2]}-{parts[0].zfill(2)}-{parts[1].zfill(2)}"
-            payload = {"title": self.new_title, "description": self.new_description,
-                       "assigned_to": self.new_assigned_to, "deadline": deadline}
-            r = await self.api("POST", "/api/tasks/", json=payload)
-            if r.status_code != 200:
-                self.toast = "Failed to create task."
-                return
-            self.show_add_dialog = False
-            self.new_title = self.new_description = self.new_assigned_to = self.new_deadline = ""
-            await self.load_ceo_dashboard()
-        except Exception:
-            self.toast = "Failed to create task."
 
     # ── Attachment upload ───────────────────────────────────────────────────
 
@@ -386,7 +385,7 @@ class TaskState(AuthState):
             return
         try:
             headers = {"Authorization": f"Bearer {self.access_token}"} if self.access_token else {}
-            file_tuples = [(("files", (f.name, await f.read()))) for f in files]
+            file_tuples = [("files", (f.name, await f.read())) for f in files]
             async with httpx.AsyncClient(timeout=120.0) as client:
                 r = await client.post(f"{_api_base()}/api/tasks/{self.attach_task_id}/attach",
                                       files=file_tuples, headers=headers)
@@ -424,65 +423,53 @@ class TaskState(AuthState):
         safe_url = url.replace("\\", "\\\\").replace("`", "\\`")
         safe_token = token.replace("\\", "\\\\").replace("`", "\\`") if token else ""
         safe_name = file_name.replace("\\", "\\\\").replace("`", "\\`")
-        script = f"""
-        (async () => {{
-            const url = `{safe_url}`;
-            const token = `{safe_token}`;
-            const fileName = `{safe_name}`;
-            try {{
-                const headers = {{}};
-                if (token) headers['Authorization'] = 'Bearer ' + token;
-                const r = await fetch(url, {{ headers }});
-                if (!r.ok) {{ console.error('Download failed:', r.status, url); return; }}
-                const blob = await r.blob();
-                const a = document.createElement('a');
-                a.href = URL.createObjectURL(blob);
-                a.download = fileName;
-                document.body.appendChild(a);
-                a.click();
-                setTimeout(() => {{ URL.revokeObjectURL(a.href); a.remove(); }}, 2000);
-            }} catch(e) {{ console.error('Download error:', e, url); }}
-        }})();
-        """
+        script = f"""(async()=>{{try{{const h={{}};const t=`{safe_token}`;if(t)h['Authorization']='Bearer '+t;const r=await fetch(`{safe_url}`,{{headers:h}});if(!r.ok)return;const b=await r.blob();const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`{safe_name}`;document.body.appendChild(a);a.click();setTimeout(()=>{{URL.revokeObjectURL(a.href);a.remove();}},2000)}}catch(e){{console.error(e)}}}})();"""
         yield rx.call_script(script)
 
-    # ── File Preview ────────────────────────────────────────────────────────
+    # ── Download submission ─────────────────────────────────────────────────
 
     @rx.event
-    async def open_preview(self, task_id: str, attachment_id: str, file_name: str) -> None:
-        """Build a preview URL and open the modal. Uses JS fetch + blob URL for auth."""
+    async def download_submission(self, task_id: str, submission_id: str, file_name: str) -> None:
         public_base = os.getenv("PUBLIC_API_URL", "http://localhost:8000").rstrip("/")
-        url = f"{public_base}/api/tasks/{task_id}/attachments/{attachment_id}/preview"
+        url = f"{public_base}/api/tasks/{task_id}/submissions/{submission_id}/download"
         token = self.access_token
+        safe_url = url.replace("\\", "\\\\").replace("`", "\\`")
+        safe_token = token.replace("\\", "\\\\").replace("`", "\\`") if token else ""
+        safe_name = file_name.replace("\\", "\\\\").replace("`", "\\`")
+        script = f"""(async()=>{{try{{const h={{}};const t=`{safe_token}`;if(t)h['Authorization']='Bearer '+t;const r=await fetch(`{safe_url}`,{{headers:h}});if(!r.ok)return;const b=await r.blob();const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`{safe_name}`;document.body.appendChild(a);a.click();setTimeout(()=>{{URL.revokeObjectURL(a.href);a.remove();}},2000)}}catch(e){{console.error(e)}}}})();"""
+        yield rx.call_script(script)
+
+    # ── File Preview (works for both attachments and submissions) ───────────
+
+    @rx.event
+    async def open_preview(self, task_id: str, file_id: str, file_name: str) -> None:
+        public_base = os.getenv("PUBLIC_API_URL", "http://localhost:8000").rstrip("/")
+        url = f"{public_base}/api/tasks/{task_id}/attachments/{file_id}/preview"
+        self._do_preview(file_name)
+        token = self.access_token
+        safe_url = url.replace("\\", "\\\\").replace("`", "\\`")
+        safe_token = token.replace("\\", "\\\\").replace("`", "\\`") if token else ""
+        script = f"""(async()=>{{try{{const h={{}};const t=`{safe_token}`;if(t)h['Authorization']='Bearer '+t;const r=await fetch(`{safe_url}`,{{headers:h}});if(!r.ok)return;const b=await r.blob();const u=URL.createObjectURL(b);const el=document.getElementById('taskme-preview-img');if(el)el.src=u;const el2=document.getElementById('taskme-preview-frame');if(el2)el2.src=u;}}catch(e){{console.error(e)}}}})();"""
+        yield rx.call_script(script)
+
+    @rx.event
+    async def open_submission_preview(self, task_id: str, sub_id: str, file_name: str) -> None:
+        public_base = os.getenv("PUBLIC_API_URL", "http://localhost:8000").rstrip("/")
+        url = f"{public_base}/api/tasks/{task_id}/submissions/{sub_id}/preview"
+        self._do_preview(file_name)
+        token = self.access_token
+        safe_url = url.replace("\\", "\\\\").replace("`", "\\`")
+        safe_token = token.replace("\\", "\\\\").replace("`", "\\`") if token else ""
+        script = f"""(async()=>{{try{{const h={{}};const t=`{safe_token}`;if(t)h['Authorization']='Bearer '+t;const r=await fetch(`{safe_url}`,{{headers:h}});if(!r.ok)return;const b=await r.blob();const u=URL.createObjectURL(b);const el=document.getElementById('taskme-preview-img');if(el)el.src=u;const el2=document.getElementById('taskme-preview-frame');if(el2)el2.src=u;}}catch(e){{console.error(e)}}}})();"""
+        yield rx.call_script(script)
+
+    def _do_preview(self, file_name: str) -> None:
         lower = file_name.lower()
-        self.preview_is_image = any(lower.endswith(ext) for ext in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp"))
+        self.preview_is_image = any(lower.endswith(e) for e in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp"))
         self.preview_is_pdf = lower.endswith(".pdf")
         self.preview_file_name = file_name
         self.preview_url = ""
         self.show_preview_dialog = True
-
-        safe_url = url.replace("\\", "\\\\").replace("`", "\\`")
-        safe_token = token.replace("\\", "\\\\").replace("`", "\\`") if token else ""
-
-        # Fetch the file as a blob with auth headers and set it as src
-        script = f"""
-        (async () => {{
-            try {{
-                const headers = {{}};
-                const token = `{safe_token}`;
-                if (token) headers['Authorization'] = 'Bearer ' + token;
-                const r = await fetch(`{safe_url}`, {{ headers }});
-                if (!r.ok) {{ console.error('Preview fetch failed:', r.status); return; }}
-                const blob = await r.blob();
-                const blobUrl = URL.createObjectURL(blob);
-                const el = document.getElementById('taskme-preview-frame');
-                if (el) {{ el.src = blobUrl; }}
-                const el2 = document.getElementById('taskme-preview-img');
-                if (el2) {{ el2.src = blobUrl; }}
-            }} catch(e) {{ console.error('Preview error:', e); }}
-        }})();
-        """
-        yield rx.call_script(script)
 
     def close_preview(self) -> None:
         self.show_preview_dialog = False
@@ -504,11 +491,9 @@ class TaskState(AuthState):
         if not data:
             return
         notif_id = data.get("id")
-        message = data.get("message") or "You have a new task."
+        message = data.get("message") or "You have a notification."
         if getattr(self, "notification_permission", "") == "granted":
-            yield rx.call_script(
-                f"""try {{ new Notification("Taskme", {{ body: {message!r} }}); }} catch(e) {{}}"""
-            )
+            yield rx.call_script(f"""try{{new Notification("Taskme",{{body:{message!r}}})}}catch(e){{}}""")
         else:
             self.toast = message
         if notif_id:
@@ -561,10 +546,10 @@ class TaskState(AuthState):
         try:
             r = await self.api("GET", "/api/reports/schedule")
             if r.status_code == 200:
-                data = r.json()
-                self.report_schedule_time = data.get("report_time", "18:00")
-                self.report_schedule_timezone = data.get("timezone", "Asia/Kolkata")
-                self.report_schedule_active = data.get("is_active", True)
+                d = r.json()
+                self.report_schedule_time = d.get("report_time", "18:00")
+                self.report_schedule_timezone = d.get("timezone", "Asia/Kolkata")
+                self.report_schedule_active = d.get("is_active", True)
         except Exception:
             pass
 
@@ -593,12 +578,39 @@ class TaskState(AuthState):
             self.toast = "Failed to generate report."
 
     async def view_report(self, report_id: str) -> None:
+        import json
         self.selected_report_id = report_id
         r = await self.api("GET", f"/api/reports/{report_id}")
         if r.status_code == 200:
-            data = r.json()
-            self.selected_report_data = data
-            self.selected_report_content = data.get("content", "")
+            d = r.json()
+            self.selected_report_data = d
+            self.selected_report_content = d.get("content", "")
+            # Parse structured content
+            try:
+                parsed = json.loads(d.get("content", "{}"))
+                raw_tasks = parsed.get("tasks", [])
+                self.report_tasks = [
+                    ReportTaskDict(
+                        id=str(t.get("id") or ""),
+                        title=str(t.get("title") or ""),
+                        assigned_to_name=str(t.get("assigned_to_name") or ""),
+                        status=str(t.get("status") or ""),
+                        progress=int(t.get("progress") or 0),
+                        deadline=str(t.get("deadline") or ""),
+                        submissions=[
+                            ReportSubmissionDict(
+                                id=str(s.get("id") or ""),
+                                file_name=str(s.get("file_name") or ""),
+                                uploaded_at=str(s.get("uploaded_at") or ""),
+                                task_id=str(s.get("task_id") or ""),
+                            )
+                            for s in (t.get("submissions") or [])
+                        ],
+                    )
+                    for t in raw_tasks
+                ]
+            except (json.JSONDecodeError, TypeError):
+                self.report_tasks = []
             self.show_report_dialog = True
         else:
             self.toast = "Failed to load report."
@@ -607,12 +619,14 @@ class TaskState(AuthState):
         self.show_report_dialog = False
         self.selected_report_content = ""
         self.selected_report_data = {}
+        self.report_tasks = []
 
     def set_report_dialog_open(self, open_: bool) -> None:
         self.show_report_dialog = bool(open_)
         if not open_:
             self.selected_report_content = ""
             self.selected_report_data = {}
+            self.report_tasks = []
 
     # ── Edit Task ───────────────────────────────────────────────────────────
 
@@ -654,9 +668,9 @@ class TaskState(AuthState):
             return
         deadline = self.edit_deadline
         if deadline and "/" in deadline:
-            parts = deadline.split("/")
-            if len(parts) == 3:
-                deadline = f"{parts[2]}-{parts[0].zfill(2)}-{parts[1].zfill(2)}"
+            p = deadline.split("/")
+            if len(p) == 3:
+                deadline = f"{p[2]}-{p[0].zfill(2)}-{p[1].zfill(2)}"
         payload = {"title": self.edit_title, "description": self.edit_description,
                    "assigned_to": self.edit_assigned_to, "deadline": deadline}
         r = await self.api("PUT", f"/api/tasks/{self.edit_task_id}", json=payload)
@@ -664,11 +678,7 @@ class TaskState(AuthState):
             self.show_edit_dialog = False
             await self.load_ceo_dashboard()
         else:
-            try:
-                detail = r.json()
-            except Exception:
-                detail = r.text
-            self.toast = f"Failed to save task ({r.status_code}): {detail}"
+            self.toast = f"Failed to save task ({r.status_code})"
 
     async def delete_attachment_from_edit(self, attachment_id: str) -> None:
         if not self.edit_task_id:
@@ -731,15 +741,11 @@ class TaskState(AuthState):
             r = await self.api("GET", f"/api/tasks/{self.comments_task_id}/comments")
             if r.status_code == 200:
                 self.comments = [
-                    CommentDict(
-                        id=str(c.get("id") or ""), task_id=str(c.get("task_id") or ""),
-                        user_id=str(c.get("user_id") or ""), author_name=str(c.get("author_name") or ""),
-                        body=str(c.get("body") or ""), created_at=str(c.get("created_at") or ""),
-                    )
+                    CommentDict(id=str(c.get("id") or ""), task_id=str(c.get("task_id") or ""),
+                                user_id=str(c.get("user_id") or ""), author_name=str(c.get("author_name") or ""),
+                                body=str(c.get("body") or ""), created_at=str(c.get("created_at") or ""))
                     for c in r.json()
                 ]
-            else:
-                self.toast = "Failed to load comments."
         finally:
             self.comments_loading = False
 
@@ -757,6 +763,61 @@ class TaskState(AuthState):
                 await self.load_employee_tasks()
         else:
             self.toast = "Failed to post comment."
+
+    # ── Submissions ─────────────────────────────────────────────────────────
+
+    def set_submissions_dialog_open(self, open_: bool) -> None:
+        self.show_submissions_dialog = bool(open_)
+        if not open_:
+            self.submissions_task_id = ""
+            self.submissions = []
+
+    async def open_submissions_dialog(self, task_id: str) -> None:
+        task = next((t for t in self.tasks if t["id"] == task_id), None)
+        self.submissions_task_id = task_id
+        self.submissions_task_title = task["title"] if task else ""
+        self.show_submissions_dialog = True
+        await self.load_submissions()
+
+    async def load_submissions(self) -> None:
+        if not self.submissions_task_id:
+            return
+        self.submissions_loading = True
+        try:
+            r = await self.api("GET", f"/api/tasks/{self.submissions_task_id}/submissions")
+            if r.status_code == 200:
+                self.submissions = [
+                    SubmissionDict(
+                        id=str(s.get("id") or ""), file_name=str(s.get("file_name") or ""),
+                        note=str(s.get("note") or ""), uploaded_at=str(s.get("uploaded_at") or ""),
+                        uploaded_by=str(s.get("uploaded_by") or ""),
+                        uploader_name=str(s.get("uploader_name") or ""),
+                    )
+                    for s in r.json()
+                ]
+        finally:
+            self.submissions_loading = False
+
+    @rx.event
+    async def upload_submission(self, files: list[rx.UploadFile]) -> None:
+        """Employee uploads work files for a task."""
+        if not files or not self.submissions_task_id:
+            return
+        try:
+            headers = {"Authorization": f"Bearer {self.access_token}"} if self.access_token else {}
+            file_tuples = [("files", (f.name, await f.read())) for f in files]
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                r = await client.post(
+                    f"{_api_base()}/api/tasks/{self.submissions_task_id}/submissions",
+                    files=file_tuples, headers=headers)
+            if r.status_code == 200:
+                self.toast = "Files submitted successfully!"
+                await self.load_submissions()
+                await self.load_employee_tasks()
+            else:
+                self.toast = f"Failed to submit files ({r.status_code})."
+        except Exception as e:
+            self.toast = f"Submission error: {e}"
 
     # ── Analytics ───────────────────────────────────────────────────────────
 

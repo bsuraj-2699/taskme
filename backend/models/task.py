@@ -15,6 +15,7 @@ class TaskStatus(str, enum.Enum):
     pending = "pending"
     in_progress = "in_progress"
     done = "done"
+    overdue = "overdue"
 
 
 class Task(Base):
@@ -39,12 +40,21 @@ class Task(Base):
     attachment_path: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
     attachment_name: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
 
+    last_activity_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+
     assignee = relationship("User", foreign_keys=[assigned_to], back_populates="tasks_assigned_to", lazy="selectin")
     assigner = relationship("User", foreign_keys=[assigned_by], back_populates="tasks_assigned_by", lazy="selectin")
     notifications = relationship("Notification", back_populates="task", cascade="all, delete-orphan", lazy="selectin")
     attachments = relationship("TaskAttachment", back_populates="task", cascade="all, delete-orphan", lazy="selectin")
     comments = relationship("TaskComment", back_populates="task", cascade="all, delete-orphan", lazy="selectin", order_by="TaskComment.created_at.asc()")
+    submissions = relationship("TaskSubmission", back_populates="task", cascade="all, delete-orphan", lazy="selectin", order_by="TaskSubmission.uploaded_at.desc()")
 
     @property
     def comment_count(self) -> int:
         return len(self.comments) if self.comments else 0
+
+    @property
+    def submission_count(self) -> int:
+        return len(self.submissions) if self.submissions else 0

@@ -36,6 +36,7 @@ def _get_or_create_schedule(db: Session) -> ReportSchedule:
 
 
 def generate_eod_report(db: Session) -> EODReport:
+    import json
     today = date.today()
     tasks = list(db.scalars(select(Task)).all())
     users = {str(u.id): u.name for u in db.scalars(select(User)).all()}
@@ -44,24 +45,32 @@ def generate_eod_report(db: Session) -> EODReport:
     pending = sum(1 for t in tasks if t.status == TaskStatus.pending)
     in_progress = sum(1 for t in tasks if t.status == TaskStatus.in_progress)
     done = sum(1 for t in tasks if t.status == TaskStatus.done)
+    overdue = sum(1 for t in tasks if t.status == TaskStatus.overdue)
 
-    lines: list[str] = [
-        f"# EOD Report — {today.isoformat()}",
-        f"Generated at: {datetime.now(UTC).strftime('%H:%M')}",
-        "",
-        "## Summary",
-        f"- Total Tasks: {total}",
-        f"- Pending: {pending}",
-        f"- In Progress: {in_progress}",
-        f"- Done: {done}",
-        "",
-        "## Task Details",
-    ]
+    # Build structured task rows with submissions
+    task_rows: list[dict] = []
     for t in tasks:
-        assignee = users.get(str(t.assigned_to), "Unknown")
-        lines.append(f"- **{t.title}** → {assignee} | {t.status.value} | {t.progress}% | Due: {t.deadline}")
+        subs = []
+        if hasattr(t, "submissions") and t.submissions:
+            for s in t.submissions:
+                subs.append({
+                    "id": str(s.id),
+                    "file_name": s.file_name,
+                    "uploaded_at": s.uploaded_at.isoformat() if s.uploaded_at else "",
+                    "task_id": str(t.id),
+                })
+        task_rows.append({
+            "id": str(t.id),
+            "title": t.title,
+            "assigned_to_name": users.get(str(t.assigned_to), "Unknown"),
+            "status": t.status.value,
+            "progress": t.progress,
+            "deadline": t.deadline.isoformat(),
+            "submissions": subs,
+        })
 
-    content = "\n".join(lines)
+    content = json.dumps({"tasks": task_rows, "overdue": overdue})
+
     report = EODReport(
         report_date=today,
         total_tasks=total,

@@ -16,6 +16,7 @@ class ReportOut(BaseModel):
     pending: int
     in_progress: int
     done: int
+    overdue: int = 0
     content: str
 
 
@@ -29,6 +30,7 @@ class ReportListItemOut(BaseModel):
     pending: int
     in_progress: int
     done: int
+    overdue: int = 0
 
 
 class ScheduleOut(BaseModel):

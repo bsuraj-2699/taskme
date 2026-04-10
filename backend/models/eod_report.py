@@ -20,5 +20,6 @@ class EODReport(Base):
     pending: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     in_progress: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     done: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    overdue: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False, default="")
 

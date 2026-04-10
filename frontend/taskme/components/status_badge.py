@@ -7,7 +7,11 @@ def status_badge(status: str) -> rx.Component:
     color = rx.cond(
         status == "done",
         "green",
-        rx.cond(status == "in_progress", "amber", "orange"),
+        rx.cond(
+            status == "overdue",
+            "red",
+            rx.cond(status == "in_progress", "amber", "orange"),
+        ),
     )
     label = rx.cond(
         status == "pending",
@@ -18,7 +22,11 @@ def status_badge(status: str) -> rx.Component:
             rx.cond(
                 status == "done",
                 "Done",
-                status,
+                rx.cond(
+                    status == "overdue",
+                    "Overdue",
+                    status,
+                ),
             ),
         ),
     )
@@ -30,4 +38,3 @@ def status_badge(status: str) -> rx.Component:
         padding_y="0.25rem",
         border_radius="999px",
     )
-

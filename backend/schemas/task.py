@@ -14,6 +14,17 @@ class AttachmentOut(BaseModel):
     uploaded_at: datetime
 
 
+class SubmissionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    file_name: str
+    note: str = ""
+    uploaded_at: datetime
+    uploaded_by: UUID
+    uploader_name: str = ""
+
+
 class TaskOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -33,6 +44,8 @@ class TaskOut(BaseModel):
     attachments: list[AttachmentOut] = []
     # Comment count for list views (populated from ORM property)
     comment_count: int = 0
+    # Employee submissions
+    submission_count: int = 0
 
 
 class TaskCreate(BaseModel):

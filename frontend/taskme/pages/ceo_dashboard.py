@@ -27,7 +27,8 @@ def _summary_cards() -> rx.Component:
         card("Pending", TaskState.pending_tasks, "#F97316"),
         card("In Progress", TaskState.in_progress_tasks, "#F59E0B"),
         card("Done", TaskState.done_tasks, "#22C55E"),
-        columns="4", spacing="4", width="100%",
+        card("Overdue", TaskState.overdue_tasks_count, "#EF4444"),
+        columns="5", spacing="4", width="100%",
     )
 
 
@@ -373,6 +374,18 @@ def _task_table() -> rx.Component:
                                              variant="solid", size="1"),
                                     rx.box(),
                                 ),
+                                rx.icon_button(
+                                    rx.icon("folder-open", size=14), size="2", variant="ghost",
+                                    color_scheme="green",
+                                    on_click=TaskState.open_submissions_dialog(task["id"]),
+                                    title="View Submissions",
+                                ),
+                                rx.cond(
+                                    task["submission_count"] > 0,
+                                    rx.badge(task["submission_count"].to_string(), color_scheme="green",
+                                             variant="solid", size="1"),
+                                    rx.box(),
+                                ),
                                 rx.button("Done", size="2", color_scheme="green", variant="outline",
                                           on_click=TaskState.mark_done(task["id"]),
                                           is_disabled=task["status"] == "done"),
@@ -614,6 +627,93 @@ def _preview_dialog() -> rx.Component:
     )
 
 
+# ── Submissions dialog (CEO views employee work files) ──────────────────────
+
+def _submissions_dialog() -> rx.Component:
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.vstack(
+                rx.hstack(
+                    rx.icon("folder-open", size=20, color="#22C55E"),
+                    rx.text("Employee Submissions", font_size="1.2rem", font_weight="900", color="#1A1A1A"),
+                    rx.spacer(),
+                    rx.text(TaskState.submissions_task_title, color="#6B7280", font_size="0.85rem",
+                            max_width="200px", overflow="hidden", text_overflow="ellipsis",
+                            white_space="nowrap"),
+                    width="100%", align="center",
+                ),
+                rx.divider(border_color="rgba(34,197,94,0.25)"),
+                rx.cond(
+                    TaskState.submissions_loading,
+                    rx.center(rx.spinner(), padding="2rem"),
+                    rx.cond(
+                        TaskState.submissions.length() > 0,
+                        rx.vstack(
+                            rx.foreach(
+                                TaskState.submissions,
+                                lambda s: rx.hstack(
+                                    rx.icon("file-check", size=16, color="#22C55E"),
+                                    rx.vstack(
+                                        rx.text(s["file_name"], font_weight="600", color="#1A1A1A",
+                                                font_size="0.88rem"),
+                                        rx.hstack(
+                                            rx.text(s["uploader_name"], color="#F97316", font_size="0.75rem",
+                                                    font_weight="600"),
+                                            rx.text(s["uploaded_at"].to_string(), color="#9CA3AF",
+                                                    font_size="0.72rem"),
+                                            spacing="2",
+                                        ),
+                                        spacing="0",
+                                    ),
+                                    rx.spacer(),
+                                    rx.icon_button(
+                                        rx.icon("eye", size=13), size="1", variant="ghost",
+                                        color_scheme="green",
+                                        on_click=TaskState.open_submission_preview(
+                                            TaskState.submissions_task_id, s["id"], s["file_name"]),
+                                        title="Preview",
+                                    ),
+                                    rx.icon_button(
+                                        rx.icon("download", size=13), size="1", variant="ghost",
+                                        color_scheme="green",
+                                        on_click=TaskState.download_submission(
+                                            TaskState.submissions_task_id, s["id"], s["file_name"]),
+                                        title="Download",
+                                    ),
+                                    width="100%", align="center", padding="0.6rem",
+                                    border="1px solid rgba(34,197,94,0.2)", border_radius="8px",
+                                    background_color="rgba(34,197,94,0.04)",
+                                ),
+                            ),
+                            spacing="2", width="100%",
+                        ),
+                        rx.center(
+                            rx.vstack(
+                                rx.icon("inbox", size=36, color="#D1D5DB"),
+                                rx.text("No submissions yet", color="#9CA3AF", font_size="0.9rem"),
+                                rx.text("Employee has not uploaded any work files for this task.",
+                                        color="#D1D5DB", font_size="0.82rem"),
+                                spacing="2", align="center",
+                            ),
+                            padding="2rem",
+                        ),
+                    ),
+                ),
+                rx.hstack(
+                    rx.button("Close", variant="outline",
+                              on_click=lambda: TaskState.set_submissions_dialog_open(False)),
+                    justify="end", width="100%",
+                ),
+                spacing="3", padding="1.5rem", background_color="#FFFFFF",
+                border_radius="12px", width="100%",
+            ),
+            max_width="600px",
+        ),
+        open=TaskState.show_submissions_dialog,
+        on_open_change=TaskState.set_submissions_dialog_open,
+    )
+
+
 # ── Report dialog ───────────────────────────────────────────────────────────
 
 def _report_dialog() -> rx.Component:
@@ -621,6 +721,7 @@ def _report_dialog() -> rx.Component:
     return rx.dialog.root(
         rx.dialog.content(
             rx.vstack(
+                # Header
                 rx.hstack(
                     rx.vstack(
                         rx.text("EOD Report", font_size="1.3rem", font_weight="900", color="#1A1A1A"),
@@ -633,48 +734,138 @@ def _report_dialog() -> rx.Component:
                     width="100%", align="center",
                 ),
                 rx.divider(border_color="rgba(251,146,60,0.3)"),
+
+                # Summary cards
                 rx.grid(
-                    rx.box(rx.vstack(rx.text("Total", color="#6B7280", font_size="0.85rem"),
+                    rx.box(rx.vstack(rx.text("Total", color="#6B7280", font_size="0.82rem"),
                                      rx.text(d["total_tasks"].to_string(), color="#1A1A1A",
-                                             font_size="1.6rem", font_weight="900"),
+                                             font_size="1.5rem", font_weight="900"),
                                      spacing="0", align="start"),
-                           padding="0.75rem", border="1px solid rgba(251,146,60,0.3)",
-                           border_radius="12px", background_color="#FFF8F3"),
-                    rx.box(rx.vstack(rx.text("Pending", color="#6B7280", font_size="0.85rem"),
+                           padding="0.6rem", border="1px solid rgba(251,146,60,0.3)",
+                           border_radius="10px", background_color="#FFF8F3"),
+                    rx.box(rx.vstack(rx.text("Pending", color="#6B7280", font_size="0.82rem"),
                                      rx.text(d["pending"].to_string(), color="#F97316",
-                                             font_size="1.6rem", font_weight="900"),
+                                             font_size="1.5rem", font_weight="900"),
                                      spacing="0", align="start"),
-                           padding="0.75rem", border="1px solid rgba(251,146,60,0.3)",
-                           border_radius="12px", background_color="#FFF8F3"),
-                    rx.box(rx.vstack(rx.text("In Progress", color="#6B7280", font_size="0.85rem"),
-                                     rx.text(d["in_progress"].to_string(), color="#F97316",
-                                             font_size="1.6rem", font_weight="900"),
+                           padding="0.6rem", border="1px solid rgba(251,146,60,0.3)",
+                           border_radius="10px", background_color="#FFF8F3"),
+                    rx.box(rx.vstack(rx.text("In Progress", color="#6B7280", font_size="0.82rem"),
+                                     rx.text(d["in_progress"].to_string(), color="#F59E0B",
+                                             font_size="1.5rem", font_weight="900"),
                                      spacing="0", align="start"),
-                           padding="0.75rem", border="1px solid rgba(251,146,60,0.3)",
-                           border_radius="12px", background_color="#FFF8F3"),
-                    rx.box(rx.vstack(rx.text("Done", color="#6B7280", font_size="0.85rem"),
+                           padding="0.6rem", border="1px solid rgba(251,146,60,0.3)",
+                           border_radius="10px", background_color="#FFF8F3"),
+                    rx.box(rx.vstack(rx.text("Done", color="#6B7280", font_size="0.82rem"),
                                      rx.text(d["done"].to_string(), color="#22C55E",
-                                             font_size="1.6rem", font_weight="900"),
+                                             font_size="1.5rem", font_weight="900"),
                                      spacing="0", align="start"),
-                           padding="0.75rem", border="1px solid rgba(251,146,60,0.3)",
-                           border_radius="12px", background_color="#FFF8F3"),
-                    columns="4", spacing="3", width="100%",
+                           padding="0.6rem", border="1px solid rgba(34,197,94,0.3)",
+                           border_radius="10px", background_color="#F0FDF4"),
+                    rx.box(rx.vstack(rx.text("Overdue", color="#6B7280", font_size="0.82rem"),
+                                     rx.text(d["overdue"].to_string(), color="#EF4444",
+                                             font_size="1.5rem", font_weight="900"),
+                                     spacing="0", align="start"),
+                           padding="0.6rem", border="1px solid rgba(239,68,68,0.3)",
+                           border_radius="10px", background_color="#FEF2F2"),
+                    columns="5", spacing="2", width="100%",
                 ),
+
+                # Task details table
                 rx.box(
                     rx.text("Task Details", font_weight="700", color="#1A1A1A",
                             font_size="0.95rem", margin_bottom="0.5rem"),
-                    rx.box(rx.text(TaskState.selected_report_content, white_space="pre-wrap",
-                                   font_size="0.82rem", color="#6B7280",
-                                   font_family="ui-monospace, monospace"),
-                           max_height="30vh", overflow_y="auto", padding="0.75rem",
-                           border="1px solid rgba(251,146,60,0.2)", border_radius="8px",
-                           background_color="#FFF8F3"),
-                    width="100%",
+                    rx.cond(
+                        TaskState.report_tasks.length() > 0,
+                        rx.table.root(
+                            rx.table.header(
+                                rx.table.row(
+                                    rx.table.column_header_cell("Task", style={"font_size": "0.8rem"}),
+                                    rx.table.column_header_cell("Assigned To", style={"font_size": "0.8rem"}),
+                                    rx.table.column_header_cell("Status", style={"font_size": "0.8rem"}),
+                                    rx.table.column_header_cell("Progress", style={"font_size": "0.8rem"}),
+                                    rx.table.column_header_cell("Deadline", style={"font_size": "0.8rem"}),
+                                    rx.table.column_header_cell("Submissions", style={"font_size": "0.8rem"}),
+                                ),
+                            ),
+                            rx.table.body(
+                                rx.foreach(
+                                    TaskState.report_tasks,
+                                    lambda t: rx.table.row(
+                                        rx.table.cell(
+                                            rx.text(t["title"], font_weight="600", font_size="0.82rem",
+                                                    color="#1A1A1A"),
+                                        ),
+                                        rx.table.cell(
+                                            rx.text(t["assigned_to_name"], font_size="0.82rem", color="#374151"),
+                                        ),
+                                        rx.table.cell(
+                                            status_badge(t["status"]),
+                                        ),
+                                        rx.table.cell(
+                                            rx.hstack(
+                                                rx.text(t["progress"].to_string() + "%",
+                                                        font_size="0.82rem", color="#1A1A1A",
+                                                        font_weight="600"),
+                                                progress_bar(t["progress"]),
+                                                spacing="2", align="center", width="100%",
+                                            ),
+                                        ),
+                                        rx.table.cell(
+                                            rx.text(t["deadline"].to_string(), font_size="0.82rem",
+                                                    color="#6B7280"),
+                                        ),
+                                        rx.table.cell(
+                                            rx.cond(
+                                                t["submissions"].length() > 0,
+                                                rx.vstack(
+                                                    rx.foreach(
+                                                        t["submissions"],
+                                                        lambda s: rx.button(
+                                                            rx.hstack(
+                                                                rx.icon("download", size=11, color="#22C55E"),
+                                                                rx.text(s["file_name"], font_size="0.72rem",
+                                                                        color="#22C55E"),
+                                                                spacing="1", align="center",
+                                                            ),
+                                                            variant="ghost", size="1",
+                                                            background_color="rgba(34,197,94,0.08)",
+                                                            border="1px solid rgba(34,197,94,0.25)",
+                                                            border_radius="5px",
+                                                            padding_x="0.3rem", padding_y="0.1rem",
+                                                            on_click=TaskState.download_submission(
+                                                                s["task_id"], s["id"], s["file_name"]
+                                                            ),
+                                                            cursor="pointer",
+                                                        ),
+                                                    ),
+                                                    spacing="1", align="start",
+                                                ),
+                                                rx.text("—", color="#D1D5DB", font_size="0.82rem"),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                            width="100%",
+                        ),
+                        # Fallback for old-format reports (plain text)
+                        rx.box(
+                            rx.text(TaskState.selected_report_content, white_space="pre-wrap",
+                                    font_size="0.82rem", color="#6B7280",
+                                    font_family="ui-monospace, monospace"),
+                            max_height="30vh", overflow_y="auto", padding="0.75rem",
+                            border="1px solid rgba(251,146,60,0.2)", border_radius="8px",
+                            background_color="#FFF8F3",
+                        ),
+                    ),
+                    width="100%", max_height="45vh", overflow_y="auto",
                 ),
+
                 rx.hstack(rx.button("Close", variant="outline", on_click=TaskState.close_report_dialog),
                            justify="end", width="100%"),
                 spacing="3", padding="1.5rem", background_color="#FFFFFF", border_radius="12px",
-            )
+            ),
+            max_width="900px",
         ),
         open=TaskState.show_report_dialog, on_open_change=TaskState.set_report_dialog_open,
     )
@@ -739,7 +930,8 @@ def _eod_reports_section() -> rx.Component:
     route="/dashboard",
     title="Taskme · Dashboard",
     on_load=[TaskState.load_ceo_dashboard, TaskState.load_eod_reports,
-             TaskState.load_report_schedule, TaskState.load_analytics],
+             TaskState.load_report_schedule, TaskState.load_analytics,
+             TaskState.request_notification_permission],
 )
 def ceo_dashboard() -> rx.Component:
     return rx.cond(
@@ -754,7 +946,7 @@ def ceo_dashboard() -> rx.Component:
                     rx.hstack(
                         rx.text("CEO Dashboard", font_size="1.4rem", font_weight="900", color="#1A1A1A"),
                         rx.spacer(),
-                        rx.select(["all", "pending", "in_progress", "done"],
+                        rx.select(["all", "pending", "in_progress", "done", "overdue"],
                                   value=TaskState.status_filter,
                                   on_change=TaskState.set_status_filter, width="220px"),
                         rx.button("Add Task", color_scheme="orange",
@@ -781,8 +973,10 @@ def ceo_dashboard() -> rx.Component:
                     _edit_task_dialog(),
                     _comments_dialog(),
                     _preview_dialog(),
+                    _submissions_dialog(),
                     _report_dialog(),
                     rx.moment(interval=30_000, on_change=TaskState.load_ceo_dashboard, display="none"),
+                    rx.moment(interval=15_000, on_change=TaskState.poll_notifications, display="none"),
                     padding="1.5rem", max_width="1200px", margin_x="auto",
                 ),
                 background_color="#FFF8F3", min_height="100vh",

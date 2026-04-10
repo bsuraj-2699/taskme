@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from core.database import get_db
-from core.deps import CurrentUser, require_role
+from core.deps import CurrentUser, get_current_user
 from core.errors import http_error
 from models.notification import Notification
 from schemas.notification import NotificationOut
@@ -21,7 +21,7 @@ router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 
 @router.get("/", response_model=list[NotificationOut])
 def unread_notifications(
-    user: CurrentUser = Depends(require_role("employee")),
+    user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Any:
     try:
@@ -40,7 +40,7 @@ def unread_notifications(
 
 @router.get("/poll", response_model=NotificationOut | None)
 def poll(
-    user: CurrentUser = Depends(require_role("employee")),
+    user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Any:
     try:
@@ -59,7 +59,7 @@ def poll(
 @router.patch("/{notification_id}/read")
 def mark_read(
     notification_id: UUID,
-    user: CurrentUser = Depends(require_role("employee")),
+    user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Any:
     try:
@@ -77,4 +77,3 @@ def mark_read(
             raise
         logger.exception("mark read failed")
         raise http_error(500, "Failed to mark read", 500)
-
