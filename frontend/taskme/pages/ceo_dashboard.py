@@ -1405,7 +1405,7 @@ def _eod_reports_section() -> rx.Component:
 
 @rx.page(
     route="/dashboard",
-    title="Taskme · Dashboard",
+    title="Zapp · Dashboard",
     on_load=[TaskState.load_ceo_dashboard, TaskState.load_eod_reports,
              TaskState.load_report_schedule, TaskState.load_analytics,
              TaskState.request_notification_permission],

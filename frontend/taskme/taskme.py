@@ -7,7 +7,7 @@ from taskme.pages.employee_view import employee_tasks  # noqa: F401
 from taskme.pages.login import login_page  # noqa: F401
 
 
-@rx.page(route="/", title="Taskme")
+@rx.page(route="/", title="Zapp")
 def index() -> rx.Component:
     return rx.center(
         rx.spinner(),

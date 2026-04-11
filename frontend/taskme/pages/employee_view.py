@@ -439,7 +439,7 @@ def _employee_app_header() -> rx.Component:
 
 # ── Page ────────────────────────────────────────────────────────────────────
 
-@rx.page(route="/tasks", title="Taskme · My Tasks",
+@rx.page(route="/tasks", title="Zapp · My Tasks",
          on_load=[TaskState.load_employee_tasks, TaskState.request_notification_permission])
 def employee_tasks() -> rx.Component:
     return rx.cond(

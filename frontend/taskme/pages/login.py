@@ -6,7 +6,7 @@ from taskme.state.auth_state import AuthState
 
 
 def _branding_column() -> rx.Component:
-    """Left panel: logo, tagline, subtle pattern and blurred dashboard motif."""
+    """Left panel: logo, subtle pattern and blurred dashboard motif."""
     return rx.box(
         # Dot grid pattern
         rx.box(
@@ -85,24 +85,14 @@ def _branding_column() -> rx.Component:
         ),
         rx.vstack(
             rx.el.img(
-                src="/taskme-logo.png",
-                alt="TaskMe",
+                src="/zapp-login-logo.png",
+                alt="ZAPP",
                 style={
                     "max_width": "min(100%, 22rem)",
                     "width": "auto",
                     "height": "auto",
                     "display": "block",
                 },
-            ),
-            rx.text(
-                "Command Your Team. Track Everything.",
-                color="rgba(255,255,255,0.88)",
-                font_size="1.05rem",
-                font_weight="500",
-                text_align="center",
-                line_height="1.55",
-                max_width="24rem",
-                letter_spacing="0.02em",
             ),
             spacing="6",
             align="center",
@@ -220,15 +210,6 @@ def _form_column() -> rx.Component:
         rx.box(
             rx.vstack(
                 _login_card(),
-                rx.text(
-                    "Powered by TaskMe",
-                    font_size="0.8125rem",
-                    color="#94A3B8",
-                    letter_spacing="0.04em",
-                    font_weight="400",
-                    margin_top="1.5rem",
-                    text_align="center",
-                ),
                 spacing="0",
                 align="center",
                 width="100%",
@@ -268,7 +249,7 @@ def _login_shell() -> rx.Component:
     )
 
 
-@rx.page(route="/login", title="Taskme · Login", on_load=AuthState.redirect_if_authed)
+@rx.page(route="/login", title="Zapp · Login", on_load=AuthState.redirect_if_authed)
 def login_page() -> rx.Component:
     return rx.cond(
         AuthState.is_hydrated,
