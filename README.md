@@ -1,23 +1,23 @@
 # Taskme
 
-Production-grade task management app for small teams (5–10 employees).
+**Zapp** — production-grade task management for small teams (about 5–10 people). The repository and Python packages use the name Taskme; the web UI and browser titles use **Zapp**.
 
 ## Tech stack
 
-- **Frontend**: Reflex (Python)
-- **Backend**: FastAPI (separate REST service)
-- **DB**: PostgreSQL (SQLAlchemy ORM + Alembic migrations)
-- **Auth**: JWT access + refresh tokens
-- **Deploy**: Docker Compose
+- **Frontend**: Reflex (Python), Inter/orange theme, routes `/`, `/login`, `/dashboard`, `/tasks`
+- **Backend**: FastAPI (REST API `Taskme API`, v1.1.x), JWT access + refresh tokens
+- **DB**: PostgreSQL (SQLAlchemy + Alembic migrations)
+- **Jobs**: APScheduler — EOD report generation from DB schedule, and hourly **follow-up** (stale tasks, deadline reminders, overdue handling)
+- **Other**: SlowAPI login rate limiting, structured logging to `LOG_DIR`, file uploads with size/count limits (see `backend/core/config.py`)
 
 ## Project layout
 
 | Area | Path | Notes |
 |------|------|--------|
 | Frontend app | `frontend/taskme/` | Pages, state, components |
-| Static assets (logos, etc.) | `frontend/assets/` | Served at `/filename` (e.g. `/taskme-logo-header.png`) |
+| Static assets (logos, etc.) | `frontend/assets/` | Served at `/filename` (e.g. `/zapp-login-logo.png`, `/taskme-logo-header.png`) |
 | Backend API | `backend/` | Routers, models, Alembic |
-| Compose | `docker-compose.yml` | `db`, `backend`, `frontend` |
+| Compose | `docker-compose.yml` | `db`, `backend`, `frontend`; uploads persisted in `uploads_data` |
 
 ## Quick start (Docker)
 
@@ -27,6 +27,8 @@ Production-grade task management app for small teams (5–10 employees).
 cp .env.example .env
 ```
 
+On Windows (PowerShell): `Copy-Item .env.example .env`
+
 2. Start everything:
 
 ```bash
@@ -35,7 +37,7 @@ docker compose up --build
 
 3. Open the app:
 
-- Frontend: `http://localhost:3000`
+- Frontend: `http://localhost:3000` (Reflex may use port **3001** for its internal backend; both are published in Compose)
 - Backend docs: `http://localhost:8000/docs`
 - Health: `http://localhost:8000/api/health`
 
@@ -53,16 +55,25 @@ This seeds:
 - Employees: `emp1/emp123`, `emp2/emp123`, `emp3/emp123`
 - Sample tasks with varied statuses/deadlines
 
+Credentials come from `SEED_*` variables in `.env` (see `.env.example`).
+
+## Backend capabilities (API)
+
+Routers include **auth**, **tasks** (with attachments), **comments**, **submissions**, **users**, **notifications**, **reports** (EOD + schedule), **analytics**, and **summary**. Uploads are stored under `UPLOADS_DIR` (default `/app/uploads` in Docker, backed by the `uploads_data` volume).
+
+The app composes `DATABASE_URL` from `POSTGRES_*` at startup so passwords with special characters do not need manual URL encoding.
+
 ## Environment variables
 
-See `.env.example` for all supported settings.
+See `.env.example` for Postgres, JWT, CORS, Reflex/API URLs, rate limit (`LOGIN_RATE_LIMIT`), logging (`LOG_LEVEL`, `LOG_DIR`), and seed users.
 
 ---
 
 ## Branding
 
-- **Header logo (CEO + employee):** replace `frontend/assets/taskme-logo-header.png` to update the logo everywhere those headers are used.
-- **Login** may use a separate asset (e.g. `/taskme-logo.png`) if configured in `taskme/pages/login.py`.
+- **Login:** `frontend/assets/zapp-login-logo.png` — referenced as `/zapp-login-logo.png` in `taskme/pages/login.py`.
+- **Dashboard headers (CEO + employee):** `frontend/assets/taskme-logo-header.png` — `/taskme-logo-header.png` in `ceo_dashboard.py` and `employee_view.py`.
+- Page titles in the app use **Zapp** (e.g. `Zapp · Login`, `Zapp · Dashboard`).
 
 ---
 
