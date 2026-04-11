@@ -599,6 +599,52 @@ def _attachment_chips(task: rx.Var) -> rx.Component:
     )
 
 
+# ── Pagination controls ────────────────────────────────────────────────────
+
+def _pagination_controls() -> rx.Component:
+    return rx.hstack(
+        rx.button(
+            rx.hstack(rx.icon("chevron-left", size=14), rx.text("Prev"), spacing="1", align="center"),
+            on_click=TaskState.go_prev_page,
+            is_disabled=~TaskState.has_prev_page,
+            variant="outline",
+            size="2",
+            color_scheme="orange",
+        ),
+        rx.hstack(
+            rx.text("Page", color="#6B7280", font_size="0.85rem"),
+            rx.text(
+                TaskState.current_page.to_string(),
+                font_weight="700",
+                color="#1A1A1A",
+                font_size="0.95rem",
+            ),
+            rx.text("of", color="#6B7280", font_size="0.85rem"),
+            rx.text(
+                TaskState.total_pages.to_string(),
+                font_weight="700",
+                color="#1A1A1A",
+                font_size="0.95rem",
+            ),
+            spacing="2",
+            align="center",
+        ),
+        rx.button(
+            rx.hstack(rx.text("Next"), rx.icon("chevron-right", size=14), spacing="1", align="center"),
+            on_click=TaskState.go_next_page,
+            is_disabled=~TaskState.has_next_page,
+            variant="outline",
+            size="2",
+            color_scheme="orange",
+        ),
+        spacing="4",
+        justify="center",
+        width="100%",
+        padding_y="1rem",
+        padding_x="0.5rem",
+    )
+
+
 # ── Task table ──────────────────────────────────────────────────────────────
 
 def _task_table() -> rx.Component:
@@ -845,7 +891,6 @@ def _comments_dialog() -> rx.Component:
                     width="100%", align="center",
                 ),
                 rx.divider(border_color="rgba(251,146,60,0.25)"),
-                # Comment thread
                 rx.box(
                     rx.cond(
                         TaskState.comments_loading,
@@ -900,7 +945,6 @@ def _comments_dialog() -> rx.Component:
                     padding="0.25rem",
                 ),
                 rx.divider(border_color="rgba(251,146,60,0.25)"),
-                # New comment input
                 rx.hstack(
                     rx.text_area(
                         placeholder="Write a comment...",
@@ -1080,7 +1124,6 @@ def _report_dialog() -> rx.Component:
     return rx.dialog.root(
         rx.dialog.content(
             rx.vstack(
-                # Header
                 rx.hstack(
                     rx.vstack(
                         rx.text("EOD Report", font_size="1.3rem", font_weight="900", color="#1A1A1A"),
@@ -1093,8 +1136,6 @@ def _report_dialog() -> rx.Component:
                     width="100%", align="center",
                 ),
                 rx.divider(border_color="rgba(251,146,60,0.3)"),
-
-                # Summary cards
                 rx.grid(
                     rx.box(rx.vstack(rx.text("Total", color="#6B7280", font_size="0.82rem"),
                                      rx.text(d["total_tasks"].to_string(), color="#1A1A1A",
@@ -1128,8 +1169,6 @@ def _report_dialog() -> rx.Component:
                            border_radius="10px", background_color="#FEF2F2"),
                     columns="5", spacing="2", width="100%",
                 ),
-
-                # Task details table
                 rx.box(
                     rx.text("Task Details", font_weight="700", color="#1A1A1A",
                             font_size="0.95rem", margin_bottom="0.5rem"),
@@ -1150,29 +1189,17 @@ def _report_dialog() -> rx.Component:
                                 rx.foreach(
                                     TaskState.report_tasks,
                                     lambda t: rx.table.row(
-                                        rx.table.cell(
-                                            rx.text(t["title"], font_weight="600", font_size="0.82rem",
-                                                    color="#1A1A1A"),
-                                        ),
-                                        rx.table.cell(
-                                            rx.text(t["assigned_to_name"], font_size="0.82rem", color="#374151"),
-                                        ),
-                                        rx.table.cell(
-                                            status_badge(t["status"]),
-                                        ),
+                                        rx.table.cell(rx.text(t["title"], font_weight="600", font_size="0.82rem", color="#1A1A1A")),
+                                        rx.table.cell(rx.text(t["assigned_to_name"], font_size="0.82rem", color="#374151")),
+                                        rx.table.cell(status_badge(t["status"])),
                                         rx.table.cell(
                                             rx.hstack(
-                                                rx.text(t["progress"].to_string() + "%",
-                                                        font_size="0.82rem", color="#1A1A1A",
-                                                        font_weight="600"),
+                                                rx.text(t["progress"].to_string() + "%", font_size="0.82rem", color="#1A1A1A", font_weight="600"),
                                                 progress_bar(t["progress"]),
                                                 spacing="2", align="center", width="100%",
                                             ),
                                         ),
-                                        rx.table.cell(
-                                            rx.text(t["deadline"].to_string(), font_size="0.82rem",
-                                                    color="#6B7280"),
-                                        ),
+                                        rx.table.cell(rx.text(t["deadline"].to_string(), font_size="0.82rem", color="#6B7280")),
                                         rx.table.cell(
                                             rx.cond(
                                                 t["submissions"].length() > 0,
@@ -1182,8 +1209,7 @@ def _report_dialog() -> rx.Component:
                                                         lambda s: rx.button(
                                                             rx.hstack(
                                                                 rx.icon("download", size=11, color="#22C55E"),
-                                                                rx.text(s["file_name"], font_size="0.72rem",
-                                                                        color="#22C55E"),
+                                                                rx.text(s["file_name"], font_size="0.72rem", color="#22C55E"),
                                                                 spacing="1", align="center",
                                                             ),
                                                             variant="ghost", size="1",
@@ -1191,9 +1217,7 @@ def _report_dialog() -> rx.Component:
                                                             border="1px solid rgba(34,197,94,0.25)",
                                                             border_radius="5px",
                                                             padding_x="0.3rem", padding_y="0.1rem",
-                                                            on_click=TaskState.download_submission(
-                                                                s["task_id"], s["id"], s["file_name"]
-                                                            ),
+                                                            on_click=TaskState.download_submission(s["task_id"], s["id"], s["file_name"]),
                                                             cursor="pointer",
                                                         ),
                                                     ),
@@ -1207,7 +1231,6 @@ def _report_dialog() -> rx.Component:
                             ),
                             width="100%",
                         ),
-                        # Fallback for old-format reports (plain text)
                         rx.box(
                             rx.text(TaskState.selected_report_content, white_space="pre-wrap",
                                     font_size="0.82rem", color="#6B7280",
@@ -1219,7 +1242,6 @@ def _report_dialog() -> rx.Component:
                     ),
                     width="100%", max_height="45vh", overflow_y="auto",
                 ),
-
                 rx.hstack(rx.button("Close", variant="outline", on_click=TaskState.close_report_dialog),
                            justify="end", width="100%"),
                 spacing="3", padding="1.5rem", background_color="#FFFFFF", border_radius="12px",
@@ -1238,113 +1260,57 @@ def _eod_reports_section() -> rx.Component:
             rx.hstack(
                 rx.vstack(
                     rx.text("EOD Reports", font_size="1.2rem", font_weight="900", color="#1A1A1A"),
-                    rx.text(
-                        "Automated end-of-day summaries and history",
-                        font_size="0.85rem",
-                        color="#64748B",
-                    ),
-                    spacing="1",
-                    align_items="start",
+                    rx.text("Automated end-of-day summaries and history", font_size="0.85rem", color="#64748B"),
+                    spacing="1", align_items="start",
                 ),
                 rx.spacer(),
-                rx.button(
-                    "Generate Now",
-                    color_scheme="orange",
-                    variant="solid",
-                    on_click=TaskState.generate_report_now,
-                ),
-                width="100%",
-                align="center",
+                rx.button("Generate Now", color_scheme="orange", variant="solid",
+                          on_click=TaskState.generate_report_now),
+                width="100%", align="center",
             ),
             rx.box(
                 rx.vstack(
-                    rx.text(
-                        "Schedule & automation",
-                        font_weight="800",
-                        color="#1A1A1A",
-                        font_size="0.95rem",
-                    ),
+                    rx.text("Schedule & automation", font_weight="800", color="#1A1A1A", font_size="0.95rem"),
                     rx.hstack(
                         rx.text("Run at", color="#64748B", font_size="0.85rem", font_weight="600"),
-                        rx.input(
-                            type="time",
-                            value=TaskState.report_schedule_time,
-                            on_change=TaskState.set_report_time,
-                            max_width="140px",
-                        ),
-                        spacing="3",
-                        align="center",
-                        flex_wrap="wrap",
+                        rx.input(type="time", value=TaskState.report_schedule_time,
+                                 on_change=TaskState.set_report_time, max_width="140px"),
+                        spacing="3", align="center", flex_wrap="wrap",
                     ),
                     rx.hstack(
                         rx.text("Timezone", color="#64748B", font_size="0.85rem", font_weight="600"),
-                        rx.input(
-                            value=TaskState.report_schedule_timezone,
-                            on_change=TaskState.set_report_timezone,
-                            width="240px",
-                            max_width="100%",
-                        ),
-                        spacing="3",
-                        align="center",
-                        flex_wrap="wrap",
+                        rx.input(value=TaskState.report_schedule_timezone,
+                                 on_change=TaskState.set_report_timezone, width="240px", max_width="100%"),
+                        spacing="3", align="center", flex_wrap="wrap",
                     ),
                     rx.hstack(
                         rx.vstack(
-                            rx.text(
-                                "Automated reports",
-                                font_weight="700",
-                                color="#1A1A1A",
-                                font_size="0.88rem",
-                            ),
-                            rx.text(
-                                "Turn off to pause scheduled generation.",
-                                font_size="0.78rem",
-                                color="#94A3B8",
-                            ),
-                            spacing="0",
-                            align_items="start",
+                            rx.text("Automated reports", font_weight="700", color="#1A1A1A", font_size="0.88rem"),
+                            rx.text("Turn off to pause scheduled generation.", font_size="0.78rem", color="#94A3B8"),
+                            spacing="0", align_items="start",
                         ),
                         rx.spacer(),
                         rx.hstack(
                             rx.text("Inactive", font_size="0.8rem", color="#94A3B8"),
-                            rx.switch(
-                                checked=TaskState.report_schedule_active,
-                                on_change=TaskState.set_report_schedule_active_bool,
-                                color_scheme="orange",
-                                size="2",
-                            ),
+                            rx.switch(checked=TaskState.report_schedule_active,
+                                      on_change=TaskState.set_report_schedule_active_bool,
+                                      color_scheme="orange", size="2"),
                             rx.text("Active", font_size="0.8rem", color="#94A3B8"),
-                            spacing="2",
-                            align="center",
+                            spacing="2", align="center",
                         ),
-                        width="100%",
-                        align="center",
-                        padding_y="0.35rem",
+                        width="100%", align="center", padding_y="0.35rem",
                     ),
                     rx.hstack(
-                        rx.button(
-                            "Save schedule",
-                            variant="outline",
-                            color_scheme="orange",
-                            on_click=TaskState.save_report_schedule,
-                        ),
+                        rx.button("Save schedule", variant="outline", color_scheme="orange",
+                                  on_click=TaskState.save_report_schedule),
                         rx.spacer(),
-                        rx.text(
-                            rx.Var.create("Last generated: ") + TaskState.latest_eod_generated_at_label,
-                            font_size="0.82rem",
-                            color="#64748B",
-                        ),
-                        width="100%",
-                        align="center",
-                        flex_wrap="wrap",
-                        spacing="3",
+                        rx.text(rx.Var.create("Last generated: ") + TaskState.latest_eod_generated_at_label,
+                                font_size="0.82rem", color="#64748B"),
+                        width="100%", align="center", flex_wrap="wrap", spacing="3",
                     ),
-                    spacing="4",
-                    width="100%",
+                    spacing="4", width="100%",
                 ),
-                width="100%",
-                padding="1.35rem",
-                border_radius="14px",
+                width="100%", padding="1.35rem", border_radius="14px",
                 background_color="rgba(248, 250, 252, 0.97)",
                 border="1px solid rgba(15, 23, 42, 0.07)",
                 box_shadow="inset 0 1px 0 rgba(255, 255, 255, 0.85)",
@@ -1361,42 +1327,41 @@ def _eod_reports_section() -> rx.Component:
                                 rx.text(
                                     rx.Var.create("Total ") + r["total_tasks"].to_string()
                                     + rx.Var.create(" · Done ") + r["done"].to_string(),
-                                    color="#64748B",
-                                    font_size="0.84rem",
+                                    color="#64748B", font_size="0.84rem",
                                 ),
-                                spacing="0",
-                                align_items="start",
+                                spacing="0", align_items="start",
                             ),
                             rx.spacer(),
-                            rx.button(
-                                "View",
-                                size="2",
-                                variant="outline",
-                                color_scheme="orange",
-                                on_click=TaskState.view_report(r["id"]),
-                            ),
-                            width="100%",
-                            align="center",
+                            rx.button("View", size="2", variant="outline", color_scheme="orange",
+                                      on_click=TaskState.view_report(r["id"])),
+                            width="100%", align="center",
                         ),
-                        padding="0.85rem 1rem",
-                        border_radius="12px",
+                        padding="0.85rem 1rem", border_radius="12px",
                         border="1px solid rgba(15, 23, 42, 0.06)",
                         background_color="#FFFFFF",
                         box_shadow="0 1px 2px rgba(15, 23, 42, 0.04)",
                     ),
                 ),
-                spacing="3",
-                width="100%",
+                # Load more reports button
+                rx.cond(
+                    TaskState.eod_reports_page < TaskState.eod_reports_total_pages,
+                    rx.button(
+                        "Load More Reports",
+                        variant="outline",
+                        color_scheme="orange",
+                        size="2",
+                        on_click=TaskState.load_more_reports,
+                        width="100%",
+                    ),
+                    rx.box(),
+                ),
+                spacing="3", width="100%",
             ),
-            spacing="4",
-            width="100%",
+            spacing="4", width="100%",
         ),
-        margin_top="1rem",
-        padding="1.35rem",
-        border="1px solid rgba(15, 23, 42, 0.06)",
-        border_radius="16px",
-        background_color="#FFFFFF",
-        width="100%",
+        margin_top="1rem", padding="1.35rem",
+        border="1px solid rgba(15, 23, 42, 0.06)", border_radius="16px",
+        background_color="#FFFFFF", width="100%",
         box_shadow="0 4px 24px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04)",
     )
 
@@ -1426,9 +1391,10 @@ def ceo_dashboard() -> rx.Component:
                     rx.cond(TaskState.is_loading, rx.center(rx.spinner()), _summary_cards()),
                     # Analytics
                     _analytics_section(),
-                    # Task table
+                    # Task table with pagination
                     rx.box(
                         rx.cond(TaskState.is_loading, rx.center(rx.spinner()), _task_table()),
+                        _pagination_controls(),
                         margin_top="1rem",
                         padding="1.25rem",
                         border="1px solid rgba(15, 23, 42, 0.06)",
@@ -1446,7 +1412,8 @@ def ceo_dashboard() -> rx.Component:
                     _preview_dialog(),
                     _submissions_dialog(),
                     _report_dialog(),
-                    rx.moment(interval=30_000, on_change=TaskState.load_ceo_dashboard, display="none"),
+                    # Lightweight poll instead of full reload every 30s
+                    rx.moment(interval=30_000, on_change=TaskState.poll_summary, display="none"),
                     rx.moment(interval=15_000, on_change=TaskState.poll_notifications, display="none"),
                     padding="1.5rem", max_width="1200px", margin_x="auto",
                 ),

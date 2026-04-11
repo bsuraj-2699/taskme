@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 import logging
+import math
 import mimetypes
 import os
+import shutil
 from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, Depends, File, Query, UploadFile
 from fastapi.responses import FileResponse
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
+from core.config import settings
 from core.database import get_db
 from core.deps import CurrentUser, get_current_user, require_role
 from core.errors import http_error
@@ -19,13 +22,23 @@ from models.attachment import TaskAttachment
 from models.notification import Notification
 from models.task import Task, TaskStatus
 from models.user import User, UserRole
-from schemas.task import ProgressUpdate, ReassignTask, TaskCreate, TaskOut, TaskUpdate
+from schemas.task import (
+    PaginatedTasks,
+    ProgressUpdate,
+    ReassignTask,
+    TaskCreate,
+    TaskOut,
+    TaskUpdate,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
 UPLOADS_DIR = Path(os.getenv("UPLOADS_DIR", "/app/uploads"))
+
+MAX_FILE_SIZE = settings.max_file_size_bytes
+MAX_FILES_PER_UPLOAD = settings.max_files_per_upload
 
 
 def _ensure_employee_exists(db: Session, user_id: UUID) -> User:
@@ -51,20 +64,64 @@ def _ensure_task_access(task: Task, user: CurrentUser) -> None:
         raise http_error(403, "Forbidden", 403)
 
 
+async def _validate_file_size(file: UploadFile) -> bytes:
+    """Read file data and validate against size limit. Returns bytes."""
+    data = await file.read()
+    if len(data) > MAX_FILE_SIZE:
+        raise http_error(
+            413,
+            f"File '{file.filename}' exceeds the {settings.max_file_size_mb}MB limit.",
+            413,
+        )
+    return data
+
+
+def _cleanup_task_files(task_id: UUID) -> None:
+    """Remove upload directory for a task from disk."""
+    task_dir = UPLOADS_DIR / str(task_id)
+    if task_dir.exists() and task_dir.is_dir():
+        shutil.rmtree(task_dir, ignore_errors=True)
+    # Also clean submission files
+    sub_dir = UPLOADS_DIR / "submissions" / str(task_id)
+    if sub_dir.exists() and sub_dir.is_dir():
+        shutil.rmtree(sub_dir, ignore_errors=True)
+
+
 # ── Static routes MUST come before /{task_id} ──────────────────────────────
 
-@router.get("/my", response_model=list[TaskOut])
+@router.get("/my", response_model=PaginatedTasks)
 def my_tasks(
     user: CurrentUser = Depends(require_role("employee")),
     db: Session = Depends(get_db),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(settings.default_page_size, ge=1, le=settings.max_page_size),
+    status: str | None = Query(None),
 ) -> Any:
     try:
+        q = select(Task).where(Task.assigned_to == user.id)
+        count_q = select(func.count()).select_from(Task).where(Task.assigned_to == user.id)
+
+        if status and status != "all":
+            q = q.where(Task.status == TaskStatus(status))
+            count_q = count_q.where(Task.status == TaskStatus(status))
+
+        total = db.scalar(count_q) or 0
+        total_pages = max(1, math.ceil(total / page_size))
+
         tasks = list(
             db.scalars(
-                select(Task).where(Task.assigned_to == user.id).order_by(Task.deadline.asc(), Task.created_at.desc())
+                q.order_by(Task.deadline.asc(), Task.created_at.desc())
+                .offset((page - 1) * page_size)
+                .limit(page_size)
             ).all()
         )
-        return tasks
+        return PaginatedTasks(
+            items=tasks,
+            total=total,
+            page=page,
+            page_size=page_size,
+            total_pages=total_pages,
+        )
     except Exception:
         logger.exception("my tasks failed")
         raise http_error(500, "Failed to fetch tasks", 500)
@@ -72,14 +129,39 @@ def my_tasks(
 
 # ── Collection routes ───────────────────────────────────────────────────────
 
-@router.get("/", response_model=list[TaskOut])
+@router.get("/", response_model=PaginatedTasks)
 def list_tasks(
     _: CurrentUser = Depends(require_role("ceo")),
     db: Session = Depends(get_db),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(settings.default_page_size, ge=1, le=settings.max_page_size),
+    status: str | None = Query(None),
 ) -> Any:
     try:
-        tasks = list(db.scalars(select(Task).order_by(Task.deadline.asc(), Task.created_at.desc())).all())
-        return tasks
+        q = select(Task)
+        count_q = select(func.count()).select_from(Task)
+
+        if status and status != "all":
+            q = q.where(Task.status == TaskStatus(status))
+            count_q = count_q.where(Task.status == TaskStatus(status))
+
+        total = db.scalar(count_q) or 0
+        total_pages = max(1, math.ceil(total / page_size))
+
+        tasks = list(
+            db.scalars(
+                q.order_by(Task.deadline.asc(), Task.created_at.desc())
+                .offset((page - 1) * page_size)
+                .limit(page_size)
+            ).all()
+        )
+        return PaginatedTasks(
+            items=tasks,
+            total=total,
+            page=page,
+            page_size=page_size,
+            total_pages=total_pages,
+        )
     except Exception:
         logger.exception("list tasks failed")
         raise http_error(500, "Failed to fetch tasks", 500)
@@ -259,6 +341,9 @@ def delete_task(
     db: Session = Depends(get_db),
 ) -> Any:
     try:
+        # Clean up files from disk BEFORE deleting from DB
+        _cleanup_task_files(task_id)
+
         res = db.execute(delete(Task).where(Task.id == task_id))
         if res.rowcount == 0:
             raise http_error(404, "Task not found", 404)
@@ -283,22 +368,26 @@ async def attach_files(
 ) -> Any:
     """Upload one or more files to a task. Each call appends to existing attachments."""
     try:
+        if len(files) > MAX_FILES_PER_UPLOAD:
+            raise http_error(400, f"Max {MAX_FILES_PER_UPLOAD} files per upload.", 400)
+
         task = _get_task_or_404(db, task_id)
 
         dest_dir = UPLOADS_DIR / str(task_id)
         dest_dir.mkdir(parents=True, exist_ok=True)
 
         for file in files:
+            data = await _validate_file_size(file)
             safe_name = os.path.basename(file.filename or "attachment")
             dest_path = dest_dir / safe_name
 
-            data = await file.read()
             dest_path.write_bytes(data)
 
             attachment = TaskAttachment(
                 task_id=task.id,
                 file_name=safe_name,
                 file_path=str(dest_path),
+                file_size=len(data),
             )
             db.add(attachment)
 

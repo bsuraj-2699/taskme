@@ -27,6 +27,7 @@ from models import (  # noqa: F401 — registers all mappers
     User,
 )
 from routers import analytics, auth, comments, notifications, reports, submissions, tasks, users
+from routers import summary
 from routers.reports import _run_report_job, _get_or_create_schedule
 from core.followup import run_followup_job
 from apscheduler.triggers.cron import CronTrigger
@@ -35,7 +36,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 setup_logging()
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Taskme API", version="1.0.0")
+app = FastAPI(title="Taskme API", version="1.1.0")
 
 
 @app.on_event("startup")
@@ -82,6 +83,7 @@ def _start_followup_scheduler() -> None:
             trigger=IntervalTrigger(hours=1),
             id="followup_check",
             replace_existing=True,
+            max_instances=1,   # Prevent overlapping runs
         )
     except Exception:
         logger.exception("Failed to start follow-up scheduler")
@@ -141,3 +143,4 @@ app.include_router(users.router)
 app.include_router(notifications.router)
 app.include_router(reports.router)
 app.include_router(analytics.router)
+app.include_router(summary.router)

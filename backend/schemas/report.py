@@ -33,6 +33,15 @@ class ReportListItemOut(BaseModel):
     overdue: int = 0
 
 
+class PaginatedReports(BaseModel):
+    """Paginated response for report list."""
+    items: list[ReportListItemOut]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+
+
 class ScheduleOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -45,4 +54,3 @@ class ScheduleUpdate(BaseModel):
     report_time: str = Field(default="18:00", min_length=5, max_length=5)
     timezone: str = Field(default="Asia/Kolkata", min_length=1, max_length=50)
     is_active: bool = True
-

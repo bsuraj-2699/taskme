@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import logging
+import math
 from datetime import UTC, date, datetime
 from typing import Any
 from uuid import UUID
 
 from apscheduler.triggers.cron import CronTrigger
-from fastapi import APIRouter, Depends
-from sqlalchemy import desc, select
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
+from core.config import settings
 from core.scheduler import get_scheduler
 from core.database import get_db
 from core.deps import CurrentUser, require_role
@@ -18,7 +20,7 @@ from models.eod_report import EODReport
 from models.report_schedule import ReportSchedule
 from models.task import Task, TaskStatus
 from models.user import User
-from schemas.report import ReportListItemOut, ReportOut, ScheduleOut, ScheduleUpdate
+from schemas.report import PaginatedReports, ReportListItemOut, ReportOut, ScheduleOut, ScheduleUpdate
 
 logger = logging.getLogger(__name__)
 
@@ -85,14 +87,33 @@ def generate_eod_report(db: Session) -> EODReport:
     return report
 
 
-@router.get("/", response_model=list[ReportListItemOut])
+@router.get("/", response_model=PaginatedReports)
 def list_reports(
     _: CurrentUser = Depends(require_role("ceo")),
     db: Session = Depends(get_db),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
 ) -> Any:
     try:
-        reports = list(db.scalars(select(EODReport).order_by(desc(EODReport.generated_at))).all())
-        return reports
+        count_q = select(func.count()).select_from(EODReport)
+        total = db.scalar(count_q) or 0
+        total_pages = max(1, math.ceil(total / page_size))
+
+        reports = list(
+            db.scalars(
+                select(EODReport)
+                .order_by(desc(EODReport.generated_at))
+                .offset((page - 1) * page_size)
+                .limit(page_size)
+            ).all()
+        )
+        return PaginatedReports(
+            items=reports,
+            total=total,
+            page=page,
+            page_size=page_size,
+            total_pages=total_pages,
+        )
     except Exception:
         logger.exception("list reports failed")
         raise http_error(500, "Failed to list reports", 500)
@@ -184,4 +205,3 @@ def _run_report_job() -> None:
 
     with SessionLocal() as db:
         generate_eod_report(db)
-

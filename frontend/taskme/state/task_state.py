@@ -145,6 +145,15 @@ class TaskState(AuthState):
     status_filter: str = "all"
     sort_deadline_asc: bool = True
 
+    # ── Pagination state ───────────────────────────────────────────────────
+    current_page: int = 1
+    page_size: int = 50
+    total_tasks_count: int = 0
+    total_pages: int = 1
+
+    # Track last_updated from summary to avoid unnecessary full reloads
+    _last_known_updated: str = ""
+
     show_add_dialog: bool = False
     new_title: str = ""
     new_description: str = ""
@@ -172,6 +181,8 @@ class TaskState(AuthState):
     edit_attachments: list[AttachmentDict] = []
 
     eod_reports: list[dict] = []
+    eod_reports_page: int = 1
+    eod_reports_total_pages: int = 1
     report_schedule_time: str = "18:00"
     report_schedule_timezone: str = "Asia/Kolkata"
     report_schedule_active: bool = True
@@ -208,15 +219,15 @@ class TaskState(AuthState):
 
     @rx.var
     def filtered_sorted_tasks(self) -> list[TaskDict]:
+        # Filtering is now done server-side via query params,
+        # but keep client-side sort for deadline toggle
         rows = self.tasks
-        if self.status_filter != "all":
-            rows = [t for t in rows if t.get("status") == self.status_filter]
         rows = sorted(rows, key=lambda t: t.get("deadline") or "", reverse=not self.sort_deadline_asc)
         return rows
 
     @rx.var
     def total_tasks(self) -> int:
-        return len(self.tasks)
+        return self.total_tasks_count
 
     @rx.var
     def pending_tasks(self) -> int:
@@ -240,7 +251,6 @@ class TaskState(AuthState):
 
     @rx.var
     def employee_stat_overdue(self) -> int:
-        """Not done and deadline before today (uses deadline + status only)."""
         today = date.today()
         n = 0
         for t in self.tasks:
@@ -265,7 +275,6 @@ class TaskState(AuthState):
 
     @rx.var
     def employee_stat_avg_completion_days(self) -> str:
-        """Mean days from created_at to updated_at for done tasks."""
         deltas: list[float] = []
         for t in self.tasks:
             if t.get("status") != "done":
@@ -316,6 +325,14 @@ class TaskState(AuthState):
         g = rows[0].get("generated_at")
         return str(g) if g is not None else "—"
 
+    @rx.var
+    def has_next_page(self) -> bool:
+        return self.current_page < self.total_pages
+
+    @rx.var
+    def has_prev_page(self) -> bool:
+        return self.current_page > 1
+
     # ── Basic setters ───────────────────────────────────────────────────────
 
     def toggle_sort_deadline(self) -> None:
@@ -349,6 +366,7 @@ class TaskState(AuthState):
 
     def set_status_filter(self, v: str) -> None:
         self.status_filter = v
+        self.current_page = 1  # Reset to page 1 on filter change
 
     def set_new_title(self, v: str) -> None:
         self.new_title = v
@@ -374,6 +392,31 @@ class TaskState(AuthState):
             names.append(f.name)
         self._pending_files_raw = raw
         self.pending_file_names = names
+
+    # ── Pagination controls ─────────────────────────────────────────────────
+
+    async def go_next_page(self) -> None:
+        if self.current_page < self.total_pages:
+            self.current_page += 1
+            if self.role == "ceo":
+                await self._load_tasks_page()
+            else:
+                await self._load_employee_tasks_page()
+
+    async def go_prev_page(self) -> None:
+        if self.current_page > 1:
+            self.current_page -= 1
+            if self.role == "ceo":
+                await self._load_tasks_page()
+            else:
+                await self._load_employee_tasks_page()
+
+    async def go_to_page(self, page: int) -> None:
+        self.current_page = max(1, min(page, self.total_pages))
+        if self.role == "ceo":
+            await self._load_tasks_page()
+        else:
+            await self._load_employee_tasks_page()
 
     # ── Helper ──────────────────────────────────────────────────────────────
 
@@ -408,7 +451,38 @@ class TaskState(AuthState):
             deadline_label_color=dcol,
         )
 
-    # ── Data loaders ────────────────────────────────────────────────────────
+    # ── Data loaders (paginated) ────────────────────────────────────────────
+
+    async def _load_tasks_page(self) -> None:
+        """Load a single page of tasks for CEO."""
+        params = f"?page={self.current_page}&page_size={self.page_size}"
+        if self.status_filter and self.status_filter != "all":
+            params += f"&status={self.status_filter}"
+
+        r1 = await self.api("GET", f"/api/tasks/{params}")
+        if r1.status_code == 200:
+            data = r1.json()
+            user_name_by_id = {u.get("id"): u.get("name") for u in self.users}
+            self.tasks = [self._build_task_dict(t, user_name_by_id) for t in data.get("items", [])]
+            self.total_tasks_count = data.get("total", 0)
+            self.total_pages = data.get("total_pages", 1)
+        else:
+            self.error = "Failed to load tasks."
+
+    async def _load_employee_tasks_page(self) -> None:
+        """Load a single page of tasks for employee."""
+        params = f"?page={self.current_page}&page_size={self.page_size}"
+        if self.status_filter and self.status_filter != "all":
+            params += f"&status={self.status_filter}"
+
+        r = await self.api("GET", f"/api/tasks/my{params}")
+        if r.status_code == 200:
+            data = r.json()
+            self.tasks = [self._build_task_dict(t) for t in data.get("items", [])]
+            self.total_tasks_count = data.get("total", 0)
+            self.total_pages = data.get("total_pages", 1)
+        else:
+            self.error = "Failed to load tasks."
 
     async def load_ceo_dashboard(self):
         if self.role != "ceo":
@@ -416,7 +490,7 @@ class TaskState(AuthState):
         self.error = ""
         self.is_loading = True
         try:
-            r1 = await self.api("GET", "/api/tasks/")
+            # Load users (this is small — a handful of users)
             r2 = await self.api("GET", "/api/users/")
             users: list[UserDict] = []
             if r2.status_code == 200:
@@ -426,11 +500,9 @@ class TaskState(AuthState):
                 self.users = users
             else:
                 self.error = "Failed to load users."
-            user_name_by_id = {u.get("id"): u.get("name") for u in users}
-            if r1.status_code == 200:
-                self.tasks = [self._build_task_dict(t, user_name_by_id) for t in r1.json()]
-            else:
-                self.error = "Failed to load tasks."
+
+            # Load paginated tasks
+            await self._load_tasks_page()
         finally:
             self.is_loading = False
 
@@ -440,13 +512,31 @@ class TaskState(AuthState):
         self.error = ""
         self.is_loading = True
         try:
-            r = await self.api("GET", "/api/tasks/my")
-            if r.status_code == 200:
-                self.tasks = [self._build_task_dict(t) for t in r.json()]
-            else:
-                self.error = "Failed to load tasks."
+            await self._load_employee_tasks_page()
         finally:
             self.is_loading = False
+
+    # ── Lightweight poll (uses /api/summary/counts) ─────────────────────────
+
+    @rx.event
+    async def poll_summary(self) -> None:
+        """Lightweight poll that checks if data changed before doing full reload."""
+        r = await self.api("GET", "/api/summary/counts")
+        if r.status_code != 200:
+            return
+        data = r.json()
+        last_updated = data.get("last_updated") or ""
+
+        # Only reload full data if something changed
+        if last_updated and last_updated != self._last_known_updated:
+            self._last_known_updated = last_updated
+            if self.role == "ceo":
+                await self._load_tasks_page()
+            else:
+                await self._load_employee_tasks_page()
+
+        # Update counts from summary (very cheap)
+        self.total_tasks_count = data.get("total", self.total_tasks_count)
 
     # ── Create task ─────────────────────────────────────────────────────────
 
@@ -548,7 +638,7 @@ class TaskState(AuthState):
         script = f"""(async()=>{{try{{const h={{}};const t=`{safe_token}`;if(t)h['Authorization']='Bearer '+t;const r=await fetch(`{safe_url}`,{{headers:h}});if(!r.ok)return;const b=await r.blob();const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`{safe_name}`;document.body.appendChild(a);a.click();setTimeout(()=>{{URL.revokeObjectURL(a.href);a.remove();}},2000)}}catch(e){{console.error(e)}}}})();"""
         yield rx.call_script(script)
 
-    # ── File Preview (works for both attachments and submissions) ───────────
+    # ── File Preview ───────────────────────────────────────────────────────
 
     @rx.event
     async def open_preview(self, task_id: str, file_id: str, file_name: str) -> None:
@@ -643,11 +733,18 @@ class TaskState(AuthState):
         if self.role != "ceo":
             return
         try:
-            r = await self.api("GET", "/api/reports/")
+            r = await self.api("GET", f"/api/reports/?page={self.eod_reports_page}&page_size=20")
             if r.status_code == 200:
-                self.eod_reports = r.json()
+                data = r.json()
+                self.eod_reports = data.get("items", [])
+                self.eod_reports_total_pages = data.get("total_pages", 1)
         except Exception:
             pass
+
+    async def load_more_reports(self) -> None:
+        if self.eod_reports_page < self.eod_reports_total_pages:
+            self.eod_reports_page += 1
+            await self.load_eod_reports()
 
     async def load_report_schedule(self) -> None:
         if self.role != "ceo":
@@ -697,7 +794,6 @@ class TaskState(AuthState):
             d = r.json()
             self.selected_report_data = d
             self.selected_report_content = d.get("content", "")
-            # Parse structured content
             try:
                 parsed = json.loads(d.get("content", "{}"))
                 raw_tasks = parsed.get("tasks", [])
@@ -912,7 +1008,6 @@ class TaskState(AuthState):
 
     @rx.event
     async def upload_submission(self, files: list[rx.UploadFile]) -> None:
-        """Employee uploads work files for a task."""
         if not files or not self.submissions_task_id:
             return
         try:

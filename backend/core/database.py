@@ -17,6 +17,9 @@ engine = create_engine(
     pool_size=10,
     max_overflow=20,
     pool_pre_ping=True,
+    pool_recycle=1800,       # Recycle connections every 30 min — prevents stale connections behind firewalls/LBs
+    pool_timeout=30,         # Wait max 30s for a connection from the pool before raising
+    echo=False,
 )
 
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)

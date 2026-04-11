@@ -30,6 +30,14 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_dir: str = "/app/logs"
 
+    # File upload limits
+    max_file_size_mb: int = 10          # Max single file size in MB
+    max_files_per_upload: int = 10      # Max files per upload request
+
+    # Pagination defaults
+    default_page_size: int = 50
+    max_page_size: int = 200
+
     def model_post_init(self, __context) -> None:
         # Always compose from POSTGRES_* so passwords like "x@y" work without manual URL-encoding.
         pw = quote(self.postgres_password, safe="")
@@ -37,6 +45,10 @@ class Settings(BaseSettings):
             f"postgresql+psycopg://{self.postgres_user}:{pw}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
         )
+
+    @property
+    def max_file_size_bytes(self) -> int:
+        return self.max_file_size_mb * 1024 * 1024
 
 
 settings = Settings()

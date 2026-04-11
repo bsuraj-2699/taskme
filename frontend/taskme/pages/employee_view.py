@@ -130,6 +130,37 @@ def _submission_section(task: rx.Var) -> rx.Component:
     )
 
 
+# ── Pagination controls ────────────────────────────────────────────────────
+
+def _employee_pagination() -> rx.Component:
+    return rx.hstack(
+        rx.button(
+            rx.hstack(rx.icon("chevron-left", size=14), rx.text("Prev"), spacing="1", align="center"),
+            on_click=TaskState.go_prev_page,
+            is_disabled=~TaskState.has_prev_page,
+            variant="outline",
+            size="2",
+            color_scheme="orange",
+        ),
+        rx.hstack(
+            rx.text("Page", color="#6B7280", font_size="0.85rem"),
+            rx.text(TaskState.current_page.to_string(), font_weight="700", color="#1A1A1A", font_size="0.95rem"),
+            rx.text("of", color="#6B7280", font_size="0.85rem"),
+            rx.text(TaskState.total_pages.to_string(), font_weight="700", color="#1A1A1A", font_size="0.95rem"),
+            spacing="2", align="center",
+        ),
+        rx.button(
+            rx.hstack(rx.text("Next"), rx.icon("chevron-right", size=14), spacing="1", align="center"),
+            on_click=TaskState.go_next_page,
+            is_disabled=~TaskState.has_next_page,
+            variant="outline",
+            size="2",
+            color_scheme="orange",
+        ),
+        spacing="4", justify="center", width="100%", padding_y="1rem",
+    )
+
+
 # ── Shared dialogs ──────────────────────────────────────────────────────────
 
 def _comments_dialog() -> rx.Component:
@@ -220,8 +251,6 @@ def _submissions_dialog() -> rx.Component:
                           rx.text(TaskState.submissions_task_title, color="#6B7280", font_size="0.85rem"),
                           width="100%", align="center"),
                 rx.divider(border_color="rgba(34,197,94,0.25)"),
-
-                # ── Upload zone ─────────────────────────────────────────
                 rx.vstack(
                     rx.text("Upload Your Work", color="#1A1A1A", font_size="0.88rem", font_weight="700"),
                     rx.upload(
@@ -247,10 +276,7 @@ def _submissions_dialog() -> rx.Component:
                     border="1px solid rgba(34,197,94,0.25)", border_radius="10px",
                     background_color="rgba(34,197,94,0.04)",
                 ),
-
                 rx.divider(border_color="rgba(34,197,94,0.15)"),
-
-                # ── Past submissions list ───────────────────────────────
                 rx.cond(
                     TaskState.submissions_loading,
                     rx.center(rx.spinner(), padding="2rem"),
@@ -319,121 +345,57 @@ def _employee_app_header() -> rx.Component:
                         rx.hstack(
                             rx.box(
                                 rx.text(
-                                    rx.cond(
-                                        TaskState.name != "",
-                                        TaskState.name[:1].to_string(),
-                                        "?",
-                                    ),
-                                    color="white",
-                                    font_weight="700",
-                                    font_size="0.9rem",
-                                    text_transform="uppercase",
+                                    rx.cond(TaskState.name != "", TaskState.name[:1].to_string(), "?"),
+                                    color="white", font_weight="700", font_size="0.9rem", text_transform="uppercase",
                                 ),
-                                width="40px",
-                                height="40px",
-                                border_radius="50%",
+                                width="40px", height="40px", border_radius="50%",
                                 background_color="#1A2B56",
-                                display="flex",
-                                align_items="center",
-                                justify_content="center",
-                                flex_shrink="0",
-                                border="2px solid rgba(229, 163, 43, 0.45)",
+                                display="flex", align_items="center", justify_content="center",
+                                flex_shrink="0", border="2px solid rgba(229, 163, 43, 0.45)",
                             ),
-                            rx.text(
-                                TaskState.name,
-                                font_weight="600",
-                                font_size="0.95rem",
-                                color="#1A1A1A",
-                                max_width="160px",
-                                overflow="hidden",
-                                text_overflow="ellipsis",
-                                white_space="nowrap",
-                            ),
-                            spacing="3",
-                            align="center",
+                            rx.text(TaskState.name, font_weight="600", font_size="0.95rem", color="#1A1A1A",
+                                    max_width="160px", overflow="hidden", text_overflow="ellipsis", white_space="nowrap"),
+                            spacing="3", align="center",
                         ),
-                        rx.button(
-                            "Logout",
-                            on_click=TaskState.logout,
-                            color_scheme="orange",
-                            variant="outline",
-                            size="2",
-                        ),
-                        spacing="2",
-                        align="center",
+                        rx.button("Logout", on_click=TaskState.logout, color_scheme="orange", variant="outline", size="2"),
+                        spacing="2", align="center",
                     ),
-                    width="100%",
-                    align="center",
-                    padding_y="0.85rem",
+                    width="100%", align="center", padding_y="0.85rem",
                 ),
                 rx.divider(border_color="rgba(15, 23, 42, 0.08)"),
                 rx.hstack(
                     rx.vstack(
                         rx.text(
                             rx.Var.create("Good Morning, ") + TaskState.name,
-                            font_size="1.5rem",
-                            font_weight="700",
-                            color="#1A1A1A",
-                            letter_spacing="-0.02em",
-                            line_height="1.25",
+                            font_size="1.5rem", font_weight="700", color="#1A1A1A",
+                            letter_spacing="-0.02em", line_height="1.25",
                         ),
                         rx.cond(
                             TaskState.pending_tasks == 1,
+                            rx.text("You have 1 task pending today", color="#6B7280", font_size="0.95rem",
+                                    margin_top="0.35rem", line_height="1.4"),
                             rx.text(
-                                "You have 1 task pending today",
-                                color="#6B7280",
-                                font_size="0.95rem",
-                                margin_top="0.35rem",
-                                line_height="1.4",
-                            ),
-                            rx.text(
-                                rx.Var.create("You have ")
-                                + TaskState.pending_tasks.to_string()
-                                + " tasks pending today",
-                                color="#6B7280",
-                                font_size="0.95rem",
-                                margin_top="0.35rem",
-                                line_height="1.4",
+                                rx.Var.create("You have ") + TaskState.pending_tasks.to_string() + " tasks pending today",
+                                color="#6B7280", font_size="0.95rem", margin_top="0.35rem", line_height="1.4",
                             ),
                         ),
-                        rx.text(
-                            "My Tasks",
-                            font_size="1.15rem",
-                            font_weight="800",
-                            color="#374151",
-                            margin_top="0.5rem",
-                            letter_spacing="-0.01em",
-                        ),
-                        spacing="0",
-                        align_items="start",
+                        rx.text("My Tasks", font_size="1.15rem", font_weight="800", color="#374151",
+                                margin_top="0.5rem", letter_spacing="-0.01em"),
+                        spacing="0", align_items="start",
                     ),
                     rx.spacer(),
-                    rx.button(
-                        "Refresh",
-                        variant="outline",
-                        on_click=TaskState.load_employee_tasks,
-                        align_self="start",
-                        margin_top="0.15rem",
-                    ),
-                    width="100%",
-                    align="start",
-                    padding_y="1rem",
+                    rx.button("Refresh", variant="outline", on_click=TaskState.load_employee_tasks,
+                              align_self="start", margin_top="0.15rem"),
+                    width="100%", align="start", padding_y="1rem",
                 ),
-                spacing="0",
-                width="100%",
+                spacing="0", width="100%",
             ),
-            max_width="900px",
-            margin_x="auto",
-            width="100%",
-            padding_x="1.5rem",
+            max_width="900px", margin_x="auto", width="100%", padding_x="1.5rem",
         ),
         background_color="#FFFFFF",
         border_bottom="1px solid rgba(15, 23, 42, 0.06)",
         box_shadow="0 4px 24px -6px rgba(15, 23, 42, 0.1)",
-        position="sticky",
-        top="0",
-        z_index="30",
-        width="100%",
+        position="sticky", top="0", z_index="30", width="100%",
     )
 
 
@@ -472,12 +434,16 @@ def employee_tasks() -> rx.Component:
                                     box_shadow="0 6px 24px rgba(15, 23, 42, 0.06)",
                                 ),
                             ),
+                            # Pagination
+                            _employee_pagination(),
                             spacing="4", width="100%",
                         ),
                     ),
                     _comments_dialog(),
                     _preview_dialog(),
                     _submissions_dialog(),
+                    # Lightweight poll instead of full reload
+                    rx.moment(interval=30_000, on_change=TaskState.poll_summary, display="none"),
                     rx.moment(interval=10_000, on_change=TaskState.poll_notifications, display="none"),
                     padding="1.5rem", max_width="900px", margin_x="auto",
                 ),

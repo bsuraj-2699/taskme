@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import mimetypes
 import os
+import shutil
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -12,6 +13,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from core.config import settings
 from core.database import get_db
 from core.deps import CurrentUser, get_current_user, require_role
 from core.errors import http_error
@@ -27,12 +29,27 @@ router = APIRouter(prefix="/api/tasks", tags=["submissions"])
 
 UPLOADS_DIR = Path(os.getenv("UPLOADS_DIR", "/app/uploads"))
 
+MAX_FILE_SIZE = settings.max_file_size_bytes
+MAX_FILES_PER_UPLOAD = settings.max_files_per_upload
+
 
 def _get_task_or_404(db: Session, task_id: UUID) -> Task:
     task = db.scalar(select(Task).where(Task.id == task_id))
     if not task:
         raise http_error(404, "Task not found", 404)
     return task
+
+
+async def _validate_file_size(file: UploadFile) -> bytes:
+    """Read file data and validate against size limit. Returns bytes."""
+    data = await file.read()
+    if len(data) > MAX_FILE_SIZE:
+        raise http_error(
+            413,
+            f"File '{file.filename}' exceeds the {settings.max_file_size_mb}MB limit.",
+            413,
+        )
+    return data
 
 
 @router.get("/{task_id}/submissions", response_model=list[SubmissionOut])
@@ -62,6 +79,7 @@ def list_submissions(
                 id=s.id,
                 file_name=s.file_name,
                 note=s.note,
+                file_size=s.file_size or 0,
                 uploaded_at=s.uploaded_at,
                 uploaded_by=s.uploaded_by,
                 uploader_name=users.get(s.uploaded_by, "Unknown"),
@@ -84,6 +102,9 @@ async def upload_submission(
 ) -> Any:
     """Employee uploads work files (deliverables) for a task."""
     try:
+        if len(files) > MAX_FILES_PER_UPLOAD:
+            raise http_error(400, f"Max {MAX_FILES_PER_UPLOAD} files per upload.", 400)
+
         task = _get_task_or_404(db, task_id)
         if task.assigned_to != user.id:
             raise http_error(403, "Forbidden", 403)
@@ -93,9 +114,9 @@ async def upload_submission(
 
         created: list[TaskSubmission] = []
         for file in files:
+            data = await _validate_file_size(file)
             safe_name = os.path.basename(file.filename or "submission")
             dest_path = dest_dir / safe_name
-            data = await file.read()
             dest_path.write_bytes(data)
 
             sub = TaskSubmission(
@@ -103,6 +124,7 @@ async def upload_submission(
                 uploaded_by=user.id,
                 file_name=safe_name,
                 file_path=str(dest_path),
+                file_size=len(data),
                 note="",
             )
             db.add(sub)
@@ -134,6 +156,7 @@ async def upload_submission(
                 id=s.id,
                 file_name=s.file_name,
                 note=s.note,
+                file_size=s.file_size or 0,
                 uploaded_at=s.uploaded_at,
                 uploaded_by=s.uploaded_by,
                 uploader_name=uploader_name,

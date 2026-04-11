@@ -11,6 +11,7 @@ class AttachmentOut(BaseModel):
 
     id: UUID
     file_name: str
+    file_size: int = 0
     uploaded_at: datetime
 
 
@@ -20,6 +21,7 @@ class SubmissionOut(BaseModel):
     id: UUID
     file_name: str
     note: str = ""
+    file_size: int = 0
     uploaded_at: datetime
     uploaded_by: UUID
     uploader_name: str = ""
@@ -70,3 +72,14 @@ class ProgressUpdate(BaseModel):
 
 class ReassignTask(BaseModel):
     assigned_to: UUID
+
+
+# ── Pagination wrapper ─────────────────────────────────────────────────────
+
+class PaginatedTasks(BaseModel):
+    """Paginated response for task list endpoints."""
+    items: list[TaskOut]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
