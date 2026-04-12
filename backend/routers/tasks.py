@@ -20,7 +20,7 @@ from core.deps import CurrentUser, get_current_user, require_role
 from core.errors import http_error
 from models.attachment import TaskAttachment
 from models.notification import Notification
-from models.task import Task, TaskStatus
+from models.task import Task, TaskPriority, TaskStatus
 from models.user import User, UserRole
 from schemas.task import (
     PaginatedTasks,
@@ -96,21 +96,42 @@ def my_tasks(
     page: int = Query(1, ge=1),
     page_size: int = Query(settings.default_page_size, ge=1, le=settings.max_page_size),
     status: str | None = Query(None),
+    priority: str | None = Query(None),
 ) -> Any:
     try:
+        from datetime import date as date_type
+        from sqlalchemy import case
+
         q = select(Task).where(Task.assigned_to == user.id)
         count_q = select(func.count()).select_from(Task).where(Task.assigned_to == user.id)
 
         if status and status != "all":
-            q = q.where(Task.status == TaskStatus(status))
-            count_q = count_q.where(Task.status == TaskStatus(status))
+            if status == "overdue":
+                today = date_type.today()
+                q = q.where(Task.deadline < today, Task.status != TaskStatus.done)
+                count_q = count_q.where(Task.deadline < today, Task.status != TaskStatus.done)
+            else:
+                q = q.where(Task.status == TaskStatus(status))
+                count_q = count_q.where(Task.status == TaskStatus(status))
+
+        if priority and priority != "all":
+            if priority in ("low", "medium", "high"):
+                q = q.where(Task.priority == TaskPriority(priority))
+                count_q = count_q.where(Task.priority == TaskPriority(priority))
 
         total = db.scalar(count_q) or 0
         total_pages = max(1, math.ceil(total / page_size))
 
+        # Sort: pending/in_progress/overdue first (by created_at desc = newest on top),
+        # then done tasks sink to the bottom.
+        status_order = case(
+            (Task.status == TaskStatus.done, 1),
+            else_=0,
+        )
+
         tasks = list(
             db.scalars(
-                q.order_by(Task.deadline.asc(), Task.created_at.desc())
+                q.order_by(status_order.asc(), Task.created_at.desc())
                 .offset((page - 1) * page_size)
                 .limit(page_size)
             ).all()
@@ -136,14 +157,33 @@ def list_tasks(
     page: int = Query(1, ge=1),
     page_size: int = Query(settings.default_page_size, ge=1, le=settings.max_page_size),
     status: str | None = Query(None),
+    assigned_to: str | None = Query(None),
 ) -> Any:
     try:
+        from datetime import date as date_type
+        from uuid import UUID as UUID_type
+
         q = select(Task)
         count_q = select(func.count()).select_from(Task)
 
+        # Employee filter
+        if assigned_to and assigned_to != "all":
+            try:
+                uid = UUID_type(assigned_to)
+                q = q.where(Task.assigned_to == uid)
+                count_q = count_q.where(Task.assigned_to == uid)
+            except (ValueError, TypeError):
+                pass
+
+        # Status filter — "overdue" is a virtual filter based on deadline
         if status and status != "all":
-            q = q.where(Task.status == TaskStatus(status))
-            count_q = count_q.where(Task.status == TaskStatus(status))
+            if status == "overdue":
+                today = date_type.today()
+                q = q.where(Task.deadline < today, Task.status != TaskStatus.done)
+                count_q = count_q.where(Task.deadline < today, Task.status != TaskStatus.done)
+            else:
+                q = q.where(Task.status == TaskStatus(status))
+                count_q = count_q.where(Task.status == TaskStatus(status))
 
         total = db.scalar(count_q) or 0
         total_pages = max(1, math.ceil(total / page_size))
@@ -175,12 +215,19 @@ def create_task(
 ) -> Any:
     try:
         _ensure_employee_exists(db, payload.assigned_to)
+
+        # Validate priority
+        priority_val = payload.priority or "medium"
+        if priority_val not in ("low", "medium", "high"):
+            priority_val = "medium"
+
         task = Task(
             title=payload.title,
             description=payload.description or "",
             assigned_to=payload.assigned_to,
             assigned_by=user.id,
             status=TaskStatus.pending,
+            priority=TaskPriority(priority_val),
             progress=0,
             deadline=payload.deadline,
         )
@@ -235,6 +282,10 @@ def update_task(
             task.status = TaskStatus(payload.status)
         if payload.progress is not None:
             task.progress = int(payload.progress)
+        if payload.priority is not None:
+            if payload.priority not in (p.value for p in TaskPriority):
+                raise http_error(422, "Invalid priority", 422)
+            task.priority = TaskPriority(payload.priority)
 
         if task.status == TaskStatus.done:
             task.progress = 100

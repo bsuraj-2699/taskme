@@ -143,6 +143,8 @@ class TaskState(AuthState):
     error: str = ""
 
     status_filter: str = "all"
+    employee_filter: str = "all"
+    priority_filter: str = "all"
     sort_deadline_asc: bool = True
 
     # ── Pagination state ───────────────────────────────────────────────────
@@ -159,6 +161,7 @@ class TaskState(AuthState):
     new_description: str = ""
     new_assigned_to: str = ""
     new_deadline: str = ""
+    new_priority: str = "medium"
 
     toast: str = ""
 
@@ -178,10 +181,12 @@ class TaskState(AuthState):
     edit_description: str = ""
     edit_assigned_to: str = ""
     edit_deadline: str = ""
+    edit_priority: str = "medium"
     edit_attachments: list[AttachmentDict] = []
 
     eod_reports: list[dict] = []
     eod_reports_page: int = 1
+    eod_reports_per_page: int = 5
     eod_reports_total_pages: int = 1
     report_schedule_time: str = "18:00"
     report_schedule_timezone: str = "Asia/Kolkata"
@@ -191,6 +196,9 @@ class TaskState(AuthState):
     selected_report_id: str = ""
     selected_report_data: dict = {}
     report_tasks: list[ReportTaskDict] = []
+
+    # Track which reports are expanded in the collapsible UI
+    expanded_report_ids: list[str] = []
 
     show_comments_dialog: bool = False
     comments_task_id: str = ""
@@ -219,31 +227,54 @@ class TaskState(AuthState):
 
     @rx.var
     def filtered_sorted_tasks(self) -> list[TaskDict]:
-        # Filtering is now done server-side via query params,
-        # but keep client-side sort for deadline toggle
         rows = self.tasks
         rows = sorted(rows, key=lambda t: t.get("deadline") or "", reverse=not self.sort_deadline_asc)
         return rows
 
     @rx.var
     def total_tasks(self) -> int:
+        # Prefer analytics (unfiltered) when available, else fall back to paginated count
+        analytics_total = int(self.analytics_data.get("total", 0))
+        if analytics_total > 0:
+            return analytics_total
         return self.total_tasks_count
 
     @rx.var
     def pending_tasks(self) -> int:
+        v = int(self.analytics_data.get("pending", 0))
+        if v > 0 or self.analytics_data:
+            return v
         return len([t for t in self.tasks if t.get("status") == "pending"])
 
     @rx.var
     def in_progress_tasks(self) -> int:
+        v = int(self.analytics_data.get("in_progress", 0))
+        if v > 0 or self.analytics_data:
+            return v
         return len([t for t in self.tasks if t.get("status") == "in_progress"])
 
     @rx.var
     def done_tasks(self) -> int:
+        v = int(self.analytics_data.get("done", 0))
+        if v > 0 or self.analytics_data:
+            return v
         return len([t for t in self.tasks if t.get("status") == "done"])
 
     @rx.var
     def overdue_tasks_count(self) -> int:
-        return len([t for t in self.tasks if t.get("status") == "overdue"])
+        # Use analytics overdue (deadline-based, unfiltered) when available
+        v = int(self.analytics_data.get("overdue", 0))
+        if v > 0 or self.analytics_data:
+            return v
+        today = date.today()
+        n = 0
+        for t in self.tasks:
+            if t.get("status") == "done":
+                continue
+            dl = _parse_iso_date(str(t.get("deadline") or ""))
+            if dl is not None and dl < today:
+                n += 1
+        return n
 
     @rx.var
     def employee_stat_pending(self) -> int:
@@ -298,6 +329,12 @@ class TaskState(AuthState):
         return [u for u in self.users if u.get("role") == "employee"]
 
     @rx.var
+    def employee_filter_options(self) -> list[UserDict]:
+        """Employee list with an 'All' option prepended for the filter dropdown."""
+        all_option = UserDict(id="all", name="All Employees", username="all", role="employee")
+        return [all_option] + [u for u in self.users if u.get("role") == "employee"]
+
+    @rx.var
     def pending_file_count(self) -> int:
         return len(self.pending_file_names)
 
@@ -340,6 +377,7 @@ class TaskState(AuthState):
 
     def open_add_dialog(self) -> None:
         self.show_add_dialog = True
+        self.new_priority = "medium"
         self.pending_file_names = []
         self._pending_files_raw = []
 
@@ -364,9 +402,27 @@ class TaskState(AuthState):
     def set_attach_dialog_open(self, open_: bool) -> None:
         self.show_attach_dialog = bool(open_)
 
-    def set_status_filter(self, v: str) -> None:
+    async def set_status_filter(self, v: str) -> None:
         self.status_filter = v
-        self.current_page = 1  # Reset to page 1 on filter change
+        self.current_page = 1
+        if self.role == "ceo":
+            await self._load_tasks_page()
+        else:
+            await self._load_employee_tasks_page()
+
+    async def set_employee_filter(self, v: str) -> None:
+        self.employee_filter = v
+        self.current_page = 1
+        if self.role == "ceo":
+            await self._load_tasks_page()
+
+    async def set_priority_filter(self, v: str) -> None:
+        self.priority_filter = v
+        self.current_page = 1
+        if self.role == "employee":
+            await self._load_employee_tasks_page()
+        else:
+            await self._load_tasks_page()
 
     def set_new_title(self, v: str) -> None:
         self.new_title = v
@@ -382,6 +438,12 @@ class TaskState(AuthState):
 
     def set_new_deadline(self, v: str) -> None:
         self.new_deadline = v
+
+    def set_new_priority(self, v: str) -> None:
+        self.new_priority = v
+
+    def set_edit_priority(self, v: str) -> None:
+        self.edit_priority = v
 
     @rx.event
     async def set_pending_file_names(self, files: list[rx.UploadFile]) -> None:
@@ -417,6 +479,14 @@ class TaskState(AuthState):
             await self._load_tasks_page()
         else:
             await self._load_employee_tasks_page()
+
+    # ── EOD report expand/collapse ──────────────────────────────────────────
+
+    def toggle_report_expanded(self, report_id: str) -> None:
+        if report_id in self.expanded_report_ids:
+            self.expanded_report_ids = [r for r in self.expanded_report_ids if r != report_id]
+        else:
+            self.expanded_report_ids = self.expanded_report_ids + [report_id]
 
     # ── Helper ──────────────────────────────────────────────────────────────
 
@@ -454,10 +524,11 @@ class TaskState(AuthState):
     # ── Data loaders (paginated) ────────────────────────────────────────────
 
     async def _load_tasks_page(self) -> None:
-        """Load a single page of tasks for CEO."""
         params = f"?page={self.current_page}&page_size={self.page_size}"
         if self.status_filter and self.status_filter != "all":
             params += f"&status={self.status_filter}"
+        if self.employee_filter and self.employee_filter != "all":
+            params += f"&assigned_to={self.employee_filter}"
 
         r1 = await self.api("GET", f"/api/tasks/{params}")
         if r1.status_code == 200:
@@ -470,10 +541,11 @@ class TaskState(AuthState):
             self.error = "Failed to load tasks."
 
     async def _load_employee_tasks_page(self) -> None:
-        """Load a single page of tasks for employee."""
         params = f"?page={self.current_page}&page_size={self.page_size}"
         if self.status_filter and self.status_filter != "all":
             params += f"&status={self.status_filter}"
+        if self.priority_filter and self.priority_filter != "all":
+            params += f"&priority={self.priority_filter}"
 
         r = await self.api("GET", f"/api/tasks/my{params}")
         if r.status_code == 200:
@@ -490,7 +562,6 @@ class TaskState(AuthState):
         self.error = ""
         self.is_loading = True
         try:
-            # Load users (this is small — a handful of users)
             r2 = await self.api("GET", "/api/users/")
             users: list[UserDict] = []
             if r2.status_code == 200:
@@ -501,7 +572,6 @@ class TaskState(AuthState):
             else:
                 self.error = "Failed to load users."
 
-            # Load paginated tasks
             await self._load_tasks_page()
         finally:
             self.is_loading = False
@@ -516,18 +586,16 @@ class TaskState(AuthState):
         finally:
             self.is_loading = False
 
-    # ── Lightweight poll (uses /api/summary/counts) ─────────────────────────
+    # ── Lightweight poll ────────────────────────────────────────────────────
 
     @rx.event
     async def poll_summary(self) -> None:
-        """Lightweight poll that checks if data changed before doing full reload."""
         r = await self.api("GET", "/api/summary/counts")
         if r.status_code != 200:
             return
         data = r.json()
         last_updated = data.get("last_updated") or ""
 
-        # Only reload full data if something changed
         if last_updated and last_updated != self._last_known_updated:
             self._last_known_updated = last_updated
             if self.role == "ceo":
@@ -535,7 +603,6 @@ class TaskState(AuthState):
             else:
                 await self._load_employee_tasks_page()
 
-        # Update counts from summary (very cheap)
         self.total_tasks_count = data.get("total", self.total_tasks_count)
 
     # ── Create task ─────────────────────────────────────────────────────────
@@ -549,8 +616,13 @@ class TaskState(AuthState):
                 p = deadline.split("/")
                 if len(p) == 3:
                     deadline = f"{p[2]}-{p[0].zfill(2)}-{p[1].zfill(2)}"
-            payload = {"title": self.new_title, "description": self.new_description,
-                       "assigned_to": self.new_assigned_to, "deadline": deadline}
+            payload = {
+                "title": self.new_title,
+                "description": self.new_description,
+                "assigned_to": self.new_assigned_to,
+                "deadline": deadline,
+                "priority": self.new_priority or "medium",
+            }
             r = await self.api("POST", "/api/tasks/", json=payload)
             if r.status_code != 200:
                 self.toast = f"Failed to create task ({r.status_code})"
@@ -572,6 +644,7 @@ class TaskState(AuthState):
             self.pending_file_names = []
             self._pending_files_raw = []
             self.new_title = self.new_description = self.new_assigned_to = self.new_deadline = ""
+            self.new_priority = "medium"
             await self.load_ceo_dashboard()
         except Exception as e:
             self.toast = f"Failed to create task: {e}"
@@ -733,13 +806,25 @@ class TaskState(AuthState):
         if self.role != "ceo":
             return
         try:
-            r = await self.api("GET", f"/api/reports/?page={self.eod_reports_page}&page_size=20")
+            r = await self.api("GET", f"/api/reports/?page={self.eod_reports_page}&page_size={self.eod_reports_per_page}")
             if r.status_code == 200:
                 data = r.json()
                 self.eod_reports = data.get("items", [])
                 self.eod_reports_total_pages = data.get("total_pages", 1)
         except Exception:
             pass
+
+    async def eod_reports_go_next(self) -> None:
+        if self.eod_reports_page < self.eod_reports_total_pages:
+            self.eod_reports_page += 1
+            self.expanded_report_ids = []
+            await self.load_eod_reports()
+
+    async def eod_reports_go_prev(self) -> None:
+        if self.eod_reports_page > 1:
+            self.eod_reports_page -= 1
+            self.expanded_report_ids = []
+            await self.load_eod_reports()
 
     async def load_more_reports(self) -> None:
         if self.eod_reports_page < self.eod_reports_total_pages:
@@ -847,6 +932,7 @@ class TaskState(AuthState):
         self.edit_description = task["description"]
         self.edit_assigned_to = str(task.get("assigned_to") or "")
         self.edit_deadline = task["deadline"]
+        self.edit_priority = task.get("priority", "medium")
         self.edit_attachments = list(task.get("attachments") or [])
         self.show_edit_dialog = True
 
@@ -879,8 +965,13 @@ class TaskState(AuthState):
             p = deadline.split("/")
             if len(p) == 3:
                 deadline = f"{p[2]}-{p[0].zfill(2)}-{p[1].zfill(2)}"
-        payload = {"title": self.edit_title, "description": self.edit_description,
-                   "assigned_to": self.edit_assigned_to, "deadline": deadline}
+        payload = {
+            "title": self.edit_title,
+            "description": self.edit_description,
+            "assigned_to": self.edit_assigned_to,
+            "deadline": deadline,
+            "priority": self.edit_priority or "medium",
+        }
         r = await self.api("PUT", f"/api/tasks/{self.edit_task_id}", json=payload)
         if r.status_code == 200:
             self.show_edit_dialog = False

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import reflex as rx
 
-from taskme.components.task_card import task_card
+from taskme.components.progress_bar import employee_progress_bar
+from taskme.components.status_badge import status_badge
 from taskme.state.task_state import TaskState
 
 
@@ -13,6 +14,19 @@ def _employee_page_styles() -> rx.Component:
           0%, 100% { background-position: 0% 50%; }
           50% { background-position: 100% 50%; }
         }
+        .emp-task-table tbody tr { transition: background-color 0.15s ease; }
+        .emp-task-table tbody tr:hover { background-color: rgba(249, 115, 22, 0.04); }
+        .emp-task-table th, .emp-task-table td {
+          padding: 0.75rem 0.85rem;
+          vertical-align: middle;
+        }
+        .emp-task-table thead th {
+          font-weight: 700;
+          font-size: 0.7rem;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          color: #64748b;
+        }
         """
     )
 
@@ -21,14 +35,15 @@ def _mini_stat_card(label: str, value, icon_name: str, accent: str, bg: str) -> 
     return rx.box(
         rx.hstack(
             rx.box(
-                rx.icon(icon_name, size=20, color=accent),
-                padding="0.55rem",
-                border_radius="12px",
+                rx.icon(icon_name, size=18, color=accent),
+                padding="0.5rem",
+                border_radius="10px",
                 background_color=bg,
             ),
             rx.vstack(
-                rx.text(value.to_string(), font_weight="900", font_size="1.35rem", color="#0F172A"),
-                rx.text(label, font_size="0.72rem", color="#64748B", font_weight="600"),
+                rx.text(value.to_string(), font_weight="900", font_size="1.25rem", color="#0F172A",
+                        line_height="1.1"),
+                rx.text(label, font_size="0.7rem", color="#64748B", font_weight="600"),
                 spacing="0",
                 align_items="start",
             ),
@@ -36,16 +51,17 @@ def _mini_stat_card(label: str, value, icon_name: str, accent: str, bg: str) -> 
             align="center",
             width="100%",
         ),
-        padding="0.85rem",
-        border_radius="14px",
+        padding="0.75rem",
+        border_radius="12px",
         border="1px solid rgba(15, 23, 42, 0.07)",
         background_color="#FFFFFF",
-        box_shadow="0 2px 12px rgba(15, 23, 42, 0.05)",
+        box_shadow="0 2px 8px rgba(15, 23, 42, 0.04)",
         width="100%",
     )
 
 
 def _employee_mini_stats() -> rx.Component:
+    """4 stats in a single horizontal row."""
     return rx.grid(
         _mini_stat_card(
             "Completed today",
@@ -69,64 +85,180 @@ def _employee_mini_stats() -> rx.Component:
             "rgba(220, 38, 38, 0.12)",
         ),
         _mini_stat_card(
-            "Avg completion time",
+            "Avg completion",
             TaskState.employee_stat_avg_completion_days,
             "timer",
             "#2563EB",
             "rgba(37, 99, 235, 0.12)",
         ),
-        columns={"initial": "1", "sm": "2"},
+        columns={"initial": "2", "sm": "4"},
         spacing="3",
         width="100%",
     )
 
 
-def _progress_controls(task: rx.Var) -> rx.Component:
-    return rx.hstack(
-        rx.slider(default_value=task["progress"], min_=0, max_=100, step=1,
-                  on_value_commit=lambda v: TaskState.update_progress(task["id"], v[0]), width="100%"),
-        rx.input(value=task["progress"].to_string(), width="90px",
-                 on_blur=lambda v: TaskState.update_progress(task["id"], v)),
-        spacing="3", width="100%", align="center",
+def _priority_badge(priority) -> rx.Component:
+    return rx.badge(
+        rx.cond(
+            priority == "high",
+            "High",
+            rx.cond(priority == "low", "Low", "Medium"),
+        ),
+        color_scheme=rx.cond(
+            priority == "high",
+            "red",
+            rx.cond(priority == "low", "green", "yellow"),
+        ),
+        variant="solid",
+        padding_x="0.5rem",
+        padding_y="0.2rem",
+        font_size="0.7rem",
+        font_weight="700",
+        border_radius="999px",
     )
 
 
-def _submission_section(task: rx.Var) -> rx.Component:
-    """Per-task submission: primary CTA or submitted state (still opens dialog)."""
-    return rx.hstack(
-        rx.cond(
-            task["submission_count"] > 0,
-            rx.button(
-                rx.hstack(
-                    rx.icon("check-circle-2", size=16, color="white"),
-                    rx.text("Submitted", font_size="0.88rem", font_weight="700", color="white"),
-                    rx.text("✓", font_size="0.95rem", font_weight="800", color="white"),
-                    spacing="2",
-                    align="center",
+# ── Tabular task view ──────────────────────────────────────────────────────
+
+def _task_table() -> rx.Component:
+    return rx.table.root(
+        rx.table.header(
+            rx.table.row(
+                rx.table.column_header_cell("Task"),
+                rx.table.column_header_cell("Priority"),
+                rx.table.column_header_cell("Status"),
+                rx.table.column_header_cell("Deadline"),
+                rx.table.column_header_cell("Progress"),
+                rx.table.column_header_cell("Comments"),
+                rx.table.column_header_cell("Submit Work"),
+            )
+        ),
+        rx.table.body(
+            rx.foreach(
+                TaskState.tasks,
+                lambda task: rx.table.row(
+                    # ── Task (title + description) ──
+                    rx.table.cell(
+                        rx.vstack(
+                            rx.text(task["title"], color="#0F172A", font_weight="700",
+                                    font_size="0.9rem"),
+                            rx.text(
+                                task["description"],
+                                color="#64748B",
+                                font_size="0.78rem",
+                                max_width="260px",
+                                overflow="hidden",
+                                text_overflow="ellipsis",
+                                white_space="nowrap",
+                            ),
+                            spacing="1",
+                        ),
+                    ),
+                    # ── Priority ──
+                    rx.table.cell(_priority_badge(task["priority"])),
+                    # ── Status ──
+                    rx.table.cell(
+                        rx.vstack(
+                            status_badge(task["status"]),
+                            rx.text(
+                                task["deadline_label"],
+                                font_size="0.72rem",
+                                font_weight="600",
+                                color=task["deadline_label_color"],
+                            ),
+                            spacing="1",
+                            align="start",
+                        ),
+                    ),
+                    # ── Deadline ──
+                    rx.table.cell(
+                        rx.text(task["deadline"].to_string(), color="#64748B",
+                                font_size="0.82rem"),
+                    ),
+                    # ── Progress ──
+                    rx.table.cell(
+                        rx.vstack(
+                            rx.text(
+                                task["progress"].to_string() + "%",
+                                font_size="0.82rem",
+                                font_weight="700",
+                                color="#334155",
+                            ),
+                            rx.box(
+                                rx.box(
+                                    style={
+                                        "width": task["progress"].to_string() + "%",
+                                        "height": "100%",
+                                        "border_radius": "999px",
+                                        "background": "linear-gradient(90deg, #EA580C 0%, #FACC15 50%, #22C55E 100%)",
+                                        "background_size": "220% 100%",
+                                        "transition": "width 0.5s ease",
+                                    },
+                                ),
+                                style={
+                                    "width": "100%",
+                                    "height": "6px",
+                                    "border_radius": "999px",
+                                    "background_color": "rgba(15, 23, 42, 0.08)",
+                                    "overflow": "hidden",
+                                    "min_width": "80px",
+                                },
+                            ),
+                            spacing="1",
+                            align="start",
+                            width="100%",
+                        ),
+                    ),
+                    # ── Comments ──
+                    rx.table.cell(
+                        rx.button(
+                            rx.hstack(
+                                rx.icon("message-square", size=13),
+                                rx.text(task["comment_count"].to_string(),
+                                        font_size="0.78rem", font_weight="600"),
+                                spacing="1",
+                                align="center",
+                            ),
+                            variant="outline",
+                            color_scheme="orange",
+                            size="1",
+                            on_click=TaskState.open_comments_dialog(task["id"]),
+                        ),
+                    ),
+                    # ── Submit Work ──
+                    rx.table.cell(
+                        rx.cond(
+                            task["submission_count"] > 0,
+                            rx.button(
+                                rx.hstack(
+                                    rx.icon("check-circle-2", size=13, color="white"),
+                                    rx.text("Submitted", font_size="0.75rem",
+                                            font_weight="700", color="white"),
+                                    spacing="1", align="center",
+                                ),
+                                color_scheme="green",
+                                variant="solid",
+                                size="1",
+                                on_click=TaskState.open_submissions_dialog(task["id"]),
+                            ),
+                            rx.button(
+                                rx.hstack(
+                                    rx.icon("upload-cloud", size=13),
+                                    rx.text("Submit", font_size="0.75rem", font_weight="600"),
+                                    spacing="1", align="center",
+                                ),
+                                color_scheme="green",
+                                variant="outline",
+                                size="1",
+                                on_click=TaskState.open_submissions_dialog(task["id"]),
+                            ),
+                        ),
+                    ),
                 ),
-                color_scheme="green",
-                variant="solid",
-                size="2",
-                width="100%",
-                on_click=TaskState.open_submissions_dialog(task["id"]),
-            ),
-            rx.button(
-                rx.hstack(
-                    rx.icon("upload-cloud", size=16),
-                    rx.text("Submit Work", font_size="0.88rem", font_weight="600"),
-                    spacing="2",
-                    align="center",
-                ),
-                color_scheme="green",
-                variant="outline",
-                size="2",
-                width="100%",
-                on_click=TaskState.open_submissions_dialog(task["id"]),
             ),
         ),
-        spacing="2",
         width="100%",
-        align="center",
+        class_name="emp-task-table",
     )
 
 
@@ -157,7 +289,7 @@ def _employee_pagination() -> rx.Component:
             size="2",
             color_scheme="orange",
         ),
-        spacing="4", justify="center", width="100%", padding_y="1rem",
+        spacing="4", justify="center", width="100%", padding_y="0.75rem",
     )
 
 
@@ -241,7 +373,7 @@ def _preview_dialog() -> rx.Component:
 
 
 def _submissions_dialog() -> rx.Component:
-    """View past submissions for a task."""
+    """View past submissions and upload new work."""
     return rx.dialog.root(
         rx.dialog.content(
             rx.vstack(
@@ -321,10 +453,9 @@ def _submissions_dialog() -> rx.Component:
     )
 
 
-# ── App header (aligned with CEO dashboard) ────────────────────────────────
+# ── App header ──────────────────────────────────────────────────────────────
 
 def _employee_app_header() -> rx.Component:
-    """Logo, avatar, logout + greeting row — matches CEO dashboard header styling."""
     return rx.box(
         rx.box(
             rx.vstack(
@@ -384,13 +515,22 @@ def _employee_app_header() -> rx.Component:
                         spacing="0", align_items="start",
                     ),
                     rx.spacer(),
-                    rx.button("Refresh", variant="outline", on_click=TaskState.load_employee_tasks,
-                              align_self="start", margin_top="0.15rem"),
+                    rx.vstack(
+                        rx.button("Refresh", variant="outline", on_click=TaskState.load_employee_tasks,
+                                  size="2"),
+                        rx.select(
+                            ["all", "low", "medium", "high"],
+                            value=TaskState.priority_filter,
+                            on_change=TaskState.set_priority_filter,
+                            width="160px",
+                        ),
+                        spacing="2", align="end",
+                    ),
                     width="100%", align="start", padding_y="1rem",
                 ),
                 spacing="0", width="100%",
             ),
-            max_width="900px", margin_x="auto", width="100%", padding_x="1.5rem",
+            max_width="1200px", margin_x="auto", width="100%", padding_x="1.5rem",
         ),
         background_color="#FFFFFF",
         border_bottom="1px solid rgba(15, 23, 42, 0.06)",
@@ -420,32 +560,41 @@ def employee_tasks() -> rx.Component:
                         rx.center(rx.spinner()),
                         rx.vstack(
                             _employee_mini_stats(),
-                            rx.foreach(
-                                TaskState.tasks,
-                                lambda t: rx.box(
-                                    task_card(t),
-                                    _progress_controls(t),
-                                    _submission_section(t),
-                                    padding="0.85rem",
-                                    border_radius="18px",
-                                    border="1px solid rgba(15, 23, 42, 0.08)",
-                                    background_color="rgba(255, 255, 255, 0.92)",
-                                    width="100%",
-                                    box_shadow="0 6px 24px rgba(15, 23, 42, 0.06)",
+                            # Task table in a card
+                            rx.box(
+                                rx.cond(
+                                    TaskState.tasks.length() > 0,
+                                    rx.vstack(
+                                        _task_table(),
+                                        _employee_pagination(),
+                                        spacing="0", width="100%",
+                                    ),
+                                    rx.center(
+                                        rx.vstack(
+                                            rx.icon("inbox", size=40, color="#D1D5DB"),
+                                            rx.text("No tasks found.", color="#94A3B8", font_size="0.95rem"),
+                                            spacing="3", align="center",
+                                        ),
+                                        padding="3rem",
+                                    ),
                                 ),
+                                border="1px solid rgba(15, 23, 42, 0.06)",
+                                border_radius="16px",
+                                background_color="#FFFFFF",
+                                box_shadow="0 4px 24px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04)",
+                                overflow="hidden",
+                                width="100%",
                             ),
-                            # Pagination
-                            _employee_pagination(),
                             spacing="4", width="100%",
                         ),
                     ),
                     _comments_dialog(),
                     _preview_dialog(),
                     _submissions_dialog(),
-                    # Lightweight poll instead of full reload
+                    # Lightweight poll
                     rx.moment(interval=30_000, on_change=TaskState.poll_summary, display="none"),
                     rx.moment(interval=10_000, on_change=TaskState.poll_notifications, display="none"),
-                    padding="1.5rem", max_width="900px", margin_x="auto",
+                    padding="1.5rem", max_width="1200px", margin_x="auto",
                 ),
                 background_color="#ECEEF3", min_height="100vh",
             ),

@@ -36,6 +36,7 @@ class TaskOut(BaseModel):
     assigned_to: UUID
     assigned_by: UUID
     status: str
+    priority: str = "medium"
     progress: int
     deadline: date
     created_at: datetime
@@ -55,6 +56,7 @@ class TaskCreate(BaseModel):
     description: str = ""
     assigned_to: UUID
     deadline: date
+    priority: str = Field(default="medium", pattern="^(low|medium|high)$")
 
 
 class TaskUpdate(BaseModel):
@@ -64,6 +66,7 @@ class TaskUpdate(BaseModel):
     deadline: date | None = None
     status: str | None = None
     progress: int | None = Field(default=None, ge=0, le=100)
+    priority: str | None = Field(default=None, pattern="^(low|medium|high)$")
 
 
 class ProgressUpdate(BaseModel):

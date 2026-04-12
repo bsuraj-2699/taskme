@@ -18,6 +18,12 @@ class TaskStatus(str, enum.Enum):
     overdue = "overdue"
 
 
+class TaskPriority(str, enum.Enum):
+    low = "low"
+    medium = "medium"
+    high = "high"
+
+
 class Task(Base):
     __tablename__ = "tasks"
 
@@ -29,6 +35,9 @@ class Task(Base):
     assigned_by: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
 
     status: Mapped[TaskStatus] = mapped_column(Enum(TaskStatus, name="task_status"), nullable=False, default=TaskStatus.pending)
+    priority: Mapped[TaskPriority] = mapped_column(
+        Enum(TaskPriority, name="task_priority"), nullable=False, default=TaskPriority.medium
+    )
     progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     deadline: Mapped[date] = mapped_column(Date, nullable=False)
 

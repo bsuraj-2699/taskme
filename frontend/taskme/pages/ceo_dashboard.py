@@ -28,6 +28,8 @@ def _ceo_table_styles() -> rx.Component:
         .ceo-workload-table tbody tr { transition: background-color 0.15s ease; }
         .ceo-workload-table tbody tr:hover { background-color: rgba(26, 43, 86, 0.04); }
         .ceo-workload-table th, .ceo-workload-table td { padding: 0.7rem 0.85rem; }
+        .eod-report-row { transition: all 0.2s ease; }
+        .eod-report-row:hover { background-color: rgba(249, 115, 22, 0.04); }
         """
     )
 
@@ -50,6 +52,23 @@ def _priority_badge(priority) -> rx.Component:
         font_size="0.72rem",
         font_weight="600",
         border_radius="999px",
+    )
+
+
+# ── Priority selector component ─────────────────────────────────────────────
+
+def _priority_select(value, on_change) -> rx.Component:
+    """Reusable priority selector for Add/Edit dialogs."""
+    return rx.select.root(
+        rx.select.trigger(placeholder="Select Priority"),
+        rx.select.content(
+            rx.select.item("Low", value="low"),
+            rx.select.item("Medium", value="medium"),
+            rx.select.item("High", value="high"),
+        ),
+        value=value,
+        on_change=on_change,
+        width="100%",
     )
 
 
@@ -152,7 +171,19 @@ def _ceo_app_header() -> rx.Component:
                             ["all", "pending", "in_progress", "done", "overdue"],
                             value=TaskState.status_filter,
                             on_change=TaskState.set_status_filter,
-                            width="220px",
+                            width="180px",
+                        ),
+                        rx.select.root(
+                            rx.select.trigger(placeholder="All Employees"),
+                            rx.select.content(
+                                rx.foreach(
+                                    TaskState.employee_filter_options,
+                                    lambda u: rx.select.item(u["name"], value=u["id"]),
+                                ),
+                            ),
+                            value=TaskState.employee_filter,
+                            on_change=TaskState.set_employee_filter,
+                            width="200px",
                         ),
                         rx.button(
                             "Add Task",
@@ -164,6 +195,7 @@ def _ceo_app_header() -> rx.Component:
                         align="center",
                         align_self="start",
                         margin_top="0.15rem",
+                        flex_wrap="wrap",
                     ),
                     width="100%",
                     align="start",
@@ -423,7 +455,7 @@ def _analytics_section() -> rx.Component:
     )
 
 
-# ── Add task dialog ─────────────────────────────────────────────────────────
+# ── Add task dialog (with Priority selector) ───────────────────────────────
 
 def _add_task_dialog() -> rx.Component:
     return rx.dialog.root(
@@ -439,6 +471,12 @@ def _add_task_dialog() -> rx.Component:
                     rx.select.content(rx.foreach(TaskState.employee_users,
                                                  lambda u: rx.select.item(u["name"], value=u["id"]))),
                     value=TaskState.new_assigned_to, on_change=TaskState.set_new_assigned_to, width="100%",
+                ),
+                # Priority selector
+                rx.vstack(
+                    rx.text("Priority", color="#6B7280", font_size="0.85rem", font_weight="600"),
+                    _priority_select(TaskState.new_priority, TaskState.set_new_priority),
+                    spacing="1", width="100%",
                 ),
                 rx.input(type="date", value=TaskState.new_deadline,
                          on_change=TaskState.set_new_deadline, width="100%"),
@@ -645,7 +683,7 @@ def _pagination_controls() -> rx.Component:
     )
 
 
-# ── Task table ──────────────────────────────────────────────────────────────
+# ── Task table (Done button REMOVED) ───────────────────────────────────────
 
 def _task_table() -> rx.Component:
     return rx.table.root(
@@ -770,15 +808,8 @@ def _task_table() -> rx.Component:
                                 ),
                                 margin_top="0.35rem",
                             ),
+                            # ── "Done" button REMOVED per requirement ──
                             rx.hstack(
-                                rx.button(
-                                    "Done",
-                                    size="2",
-                                    color_scheme="green",
-                                    variant="outline",
-                                    on_click=TaskState.mark_done(task["id"]),
-                                    is_disabled=task["status"] == "done",
-                                ),
                                 rx.button(
                                     "Reassign",
                                     size="2",
@@ -810,7 +841,7 @@ def _task_table() -> rx.Component:
     )
 
 
-# ── Edit task dialog ────────────────────────────────────────────────────────
+# ── Edit task dialog (with Priority selector) ──────────────────────────────
 
 def _edit_task_dialog() -> rx.Component:
     return rx.dialog.root(
@@ -826,6 +857,12 @@ def _edit_task_dialog() -> rx.Component:
                     rx.select.content(rx.foreach(TaskState.employee_users,
                                                  lambda u: rx.select.item(u["name"], value=u["id"]))),
                     value=TaskState.edit_assigned_to, on_change=TaskState.set_edit_assigned_to, width="100%",
+                ),
+                # Priority selector in edit dialog
+                rx.vstack(
+                    rx.text("Priority", color="#6B7280", font_size="0.85rem", font_weight="600"),
+                    _priority_select(TaskState.edit_priority, TaskState.set_edit_priority),
+                    spacing="1", width="100%",
                 ),
                 rx.input(type="date", value=TaskState.edit_deadline,
                          on_change=TaskState.set_edit_deadline, width="100%"),
@@ -1252,7 +1289,134 @@ def _report_dialog() -> rx.Component:
     )
 
 
-# ── EOD reports section ─────────────────────────────────────────────────────
+# ── EOD reports section (collapsible rows + pagination at 5 per page) ───────
+
+def _eod_report_row(r: rx.Var) -> rx.Component:
+    """Compact horizontal report row — collapsible with inline stats."""
+    is_expanded = TaskState.expanded_report_ids.contains(r["id"])
+
+    return rx.box(
+        # ── Compact header: chevron | date | inline stats | button — all one line
+        rx.hstack(
+            # Chevron + date (clickable)
+            rx.hstack(
+                rx.cond(
+                    is_expanded,
+                    rx.icon("chevron-down", size=14, color="#F97316"),
+                    rx.icon("chevron-right", size=14, color="#94A3B8"),
+                ),
+                rx.text(r["report_date"].to_string(), color="#1A1A1A", font_weight="700",
+                        font_size="0.88rem", white_space="nowrap"),
+                spacing="2", align="center",
+                cursor="pointer",
+                on_click=TaskState.toggle_report_expanded(r["id"]),
+                flex_shrink="0",
+            ),
+            # Inline summary chips
+            rx.hstack(
+                rx.hstack(
+                    rx.text("Total", color="#94A3B8", font_size="0.72rem"),
+                    rx.text(r["total_tasks"].to_string(), color="#1A1A1A", font_weight="700",
+                            font_size="0.82rem"),
+                    spacing="1", align="center",
+                ),
+                rx.box(width="1px", height="14px", background_color="rgba(15,23,42,0.1)"),
+                rx.hstack(
+                    rx.text("Done", color="#94A3B8", font_size="0.72rem"),
+                    rx.text(r["done"].to_string(), color="#22C55E", font_weight="700",
+                            font_size="0.82rem"),
+                    spacing="1", align="center",
+                ),
+                rx.box(width="1px", height="14px", background_color="rgba(15,23,42,0.1)"),
+                rx.hstack(
+                    rx.text("Pending", color="#94A3B8", font_size="0.72rem"),
+                    rx.text(r["pending"].to_string(), color="#F97316", font_weight="700",
+                            font_size="0.82rem"),
+                    spacing="1", align="center",
+                ),
+                spacing="3", align="center",
+                cursor="pointer",
+                on_click=TaskState.toggle_report_expanded(r["id"]),
+            ),
+            rx.spacer(),
+            rx.button("View", size="1", variant="outline", color_scheme="orange",
+                      on_click=TaskState.view_report(r["id"])),
+            width="100%", align="center", spacing="4",
+        ),
+        # ── Expanded detail — compact inline grid
+        rx.cond(
+            is_expanded,
+            rx.hstack(
+                rx.hstack(
+                    rx.text("In Progress:", color="#64748B", font_size="0.78rem"),
+                    rx.text(r["in_progress"].to_string(), color="#F59E0B", font_weight="700",
+                            font_size="0.82rem"),
+                    spacing="1", align="center",
+                ),
+                rx.hstack(
+                    rx.text("Overdue:", color="#64748B", font_size="0.78rem"),
+                    rx.text(r["overdue"].to_string(), color="#EF4444", font_weight="700",
+                            font_size="0.82rem"),
+                    spacing="1", align="center",
+                ),
+                rx.box(width="1px", height="12px", background_color="rgba(15,23,42,0.08)"),
+                rx.text(
+                    rx.Var.create("Generated: ") + r["generated_at"].to_string(),
+                    color="#94A3B8", font_size="0.72rem",
+                ),
+                spacing="4", align="center",
+                padding="0.45rem 0.75rem 0.35rem 2rem",
+                border_top="1px solid rgba(15, 23, 42, 0.05)",
+                background_color="rgba(248, 250, 252, 0.5)",
+                width="100%",
+                flex_wrap="wrap",
+            ),
+            rx.box(),
+        ),
+        padding="0.55rem 0.85rem", border_radius="10px",
+        border="1px solid rgba(15, 23, 42, 0.06)",
+        background_color="#FFFFFF",
+        box_shadow="0 1px 2px rgba(15, 23, 42, 0.03)",
+        class_name="eod-report-row",
+        overflow="hidden",
+    )
+
+
+def _eod_reports_pagination() -> rx.Component:
+    """Pagination controls for past EOD reports (5 per page)."""
+    return rx.hstack(
+        rx.button(
+            rx.hstack(rx.icon("chevron-left", size=14), rx.text("Prev"), spacing="1", align="center"),
+            on_click=TaskState.eod_reports_go_prev,
+            is_disabled=TaskState.eod_reports_page <= 1,
+            variant="outline",
+            size="1",
+            color_scheme="orange",
+        ),
+        rx.hstack(
+            rx.text("Page", color="#6B7280", font_size="0.8rem"),
+            rx.text(
+                TaskState.eod_reports_page.to_string(),
+                font_weight="700", color="#1A1A1A", font_size="0.88rem",
+            ),
+            rx.text("of", color="#6B7280", font_size="0.8rem"),
+            rx.text(
+                TaskState.eod_reports_total_pages.to_string(),
+                font_weight="700", color="#1A1A1A", font_size="0.88rem",
+            ),
+            spacing="2", align="center",
+        ),
+        rx.button(
+            rx.hstack(rx.text("Next"), rx.icon("chevron-right", size=14), spacing="1", align="center"),
+            on_click=TaskState.eod_reports_go_next,
+            is_disabled=TaskState.eod_reports_page >= TaskState.eod_reports_total_pages,
+            variant="outline",
+            size="1",
+            color_scheme="orange",
+        ),
+        spacing="3", justify="center", width="100%", padding_top="0.5rem",
+    )
+
 
 def _eod_reports_section() -> rx.Component:
     return rx.box(
@@ -1316,44 +1480,20 @@ def _eod_reports_section() -> rx.Component:
                 box_shadow="inset 0 1px 0 rgba(255, 255, 255, 0.85)",
             ),
             rx.divider(border_color="rgba(15, 23, 42, 0.08)"),
+            # Past reports — collapsible rows with pagination
             rx.vstack(
                 rx.text("Past reports", color="#475569", font_weight="800", font_size="0.9rem"),
-                rx.foreach(
-                    TaskState.eod_reports,
-                    lambda r: rx.box(
-                        rx.hstack(
-                            rx.vstack(
-                                rx.text(r["report_date"].to_string(), color="#1A1A1A", font_weight="700"),
-                                rx.text(
-                                    rx.Var.create("Total ") + r["total_tasks"].to_string()
-                                    + rx.Var.create(" · Done ") + r["done"].to_string(),
-                                    color="#64748B", font_size="0.84rem",
-                                ),
-                                spacing="0", align_items="start",
-                            ),
-                            rx.spacer(),
-                            rx.button("View", size="2", variant="outline", color_scheme="orange",
-                                      on_click=TaskState.view_report(r["id"])),
-                            width="100%", align="center",
-                        ),
-                        padding="0.85rem 1rem", border_radius="12px",
-                        border="1px solid rgba(15, 23, 42, 0.06)",
-                        background_color="#FFFFFF",
-                        box_shadow="0 1px 2px rgba(15, 23, 42, 0.04)",
-                    ),
-                ),
-                # Load more reports button
                 rx.cond(
-                    TaskState.eod_reports_page < TaskState.eod_reports_total_pages,
-                    rx.button(
-                        "Load More Reports",
-                        variant="outline",
-                        color_scheme="orange",
-                        size="2",
-                        on_click=TaskState.load_more_reports,
-                        width="100%",
+                    TaskState.eod_reports.length() > 0,
+                    rx.vstack(
+                        rx.foreach(TaskState.eod_reports, _eod_report_row),
+                        _eod_reports_pagination(),
+                        spacing="2", width="100%",
                     ),
-                    rx.box(),
+                    rx.center(
+                        rx.text("No reports generated yet.", color="#94A3B8", font_size="0.88rem"),
+                        padding="1.5rem",
+                    ),
                 ),
                 spacing="3", width="100%",
             ),
