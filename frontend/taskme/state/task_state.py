@@ -223,6 +223,19 @@ class TaskState(AuthState):
     submissions: list[SubmissionDict] = []
     submissions_loading: bool = False
 
+    # ── Employee Management (CEO) ───────────────────────────────────────────
+    show_employee_mgmt_dialog: bool = False
+    new_emp_name: str = ""
+    new_emp_username: str = ""
+    new_emp_password: str = ""
+    new_emp_role: str = "employee"
+    employee_mgmt_toast: str = ""
+    employee_mgmt_loading: bool = False
+
+    show_delete_employee_dialog: bool = False
+    delete_employee_id: str = ""
+    delete_employee_name: str = ""
+
     # ── Computed vars ───────────────────────────────────────────────────────
 
     @rx.var
@@ -1131,3 +1144,149 @@ class TaskState(AuthState):
             pass
         finally:
             self.analytics_loading = False
+
+    # ── Employee Management (CEO) ───────────────────────────────────────────
+
+    def open_add_employee_dialog(self) -> None:
+        self.show_employee_mgmt_dialog = True
+        self.new_emp_name = ""
+        self.new_emp_username = ""
+        self.new_emp_password = ""
+        self.new_emp_role = "employee"
+        self.employee_mgmt_toast = ""
+
+    def close_add_employee_dialog(self) -> None:
+        self.show_employee_mgmt_dialog = False
+        self.new_emp_name = ""
+        self.new_emp_username = ""
+        self.new_emp_password = ""
+        self.new_emp_role = "employee"
+        self.employee_mgmt_toast = ""
+
+    def set_add_employee_dialog_open(self, open_: bool) -> None:
+        self.show_employee_mgmt_dialog = bool(open_)
+        if not open_:
+            self.close_add_employee_dialog()
+
+    def set_new_emp_name(self, v: str) -> None:
+        self.new_emp_name = v
+
+    def set_new_emp_username(self, v: str) -> None:
+        self.new_emp_username = v
+
+    def set_new_emp_password(self, v: str) -> None:
+        self.new_emp_password = v
+
+    def set_new_emp_role(self, v: str) -> None:
+        self.new_emp_role = v
+
+    async def create_employee(self) -> None:
+        self.employee_mgmt_toast = ""
+        if not self.new_emp_name.strip():
+            self.employee_mgmt_toast = "Name is required."
+            return
+        if not self.new_emp_username.strip():
+            self.employee_mgmt_toast = "Username is required."
+            return
+        if not self.new_emp_password.strip():
+            self.employee_mgmt_toast = "Password is required."
+            return
+        if len(self.new_emp_password.strip()) < 3:
+            self.employee_mgmt_toast = "Password must be at least 3 characters."
+            return
+
+        self.employee_mgmt_loading = True
+        try:
+            payload = {
+                "name": self.new_emp_name.strip(),
+                "username": self.new_emp_username.strip(),
+                "password": self.new_emp_password.strip(),
+                "role": self.new_emp_role or "employee",
+            }
+            r = await self.api("POST", "/api/users/", json=payload)
+            if r.status_code == 200:
+                self.show_employee_mgmt_dialog = False
+                self.new_emp_name = ""
+                self.new_emp_username = ""
+                self.new_emp_password = ""
+                self.new_emp_role = "employee"
+                self.employee_mgmt_toast = ""
+                self.toast = "Employee created successfully!"
+                # Reload users list
+                r2 = await self.api("GET", "/api/users/")
+                if r2.status_code == 200:
+                    self.users = [
+                        UserDict(
+                            id=str(u.get("id") or ""),
+                            name=str(u.get("name") or ""),
+                            username=str(u.get("username") or ""),
+                            role=str(u.get("role") or ""),
+                        )
+                        for u in r2.json()
+                    ]
+            else:
+                try:
+                    err = r.json()
+                    msg = err.get("detail", {}).get("message", "") if isinstance(err.get("detail"), dict) else str(err.get("detail", ""))
+                except Exception:
+                    msg = ""
+                self.employee_mgmt_toast = msg or f"Failed to create employee ({r.status_code})."
+        except Exception as e:
+            self.employee_mgmt_toast = f"Error: {e}"
+        finally:
+            self.employee_mgmt_loading = False
+
+    def open_delete_employee_dialog(self, user_id: str) -> None:
+        user = next((u for u in self.users if u["id"] == user_id), None)
+        if not user:
+            return
+        self.delete_employee_id = user_id
+        self.delete_employee_name = user.get("name", "Unknown")
+        self.show_delete_employee_dialog = True
+
+    def close_delete_employee_dialog(self) -> None:
+        self.show_delete_employee_dialog = False
+        self.delete_employee_id = ""
+        self.delete_employee_name = ""
+
+    def set_delete_employee_dialog_open(self, open_: bool) -> None:
+        self.show_delete_employee_dialog = bool(open_)
+        if not open_:
+            self.close_delete_employee_dialog()
+
+    async def delete_employee(self) -> None:
+        if not self.delete_employee_id:
+            return
+        self.employee_mgmt_loading = True
+        try:
+            r = await self.api("DELETE", f"/api/users/{self.delete_employee_id}")
+            if r.status_code == 200:
+                self.show_delete_employee_dialog = False
+                self.toast = f"Employee '{self.delete_employee_name}' deleted."
+                self.delete_employee_id = ""
+                self.delete_employee_name = ""
+                # Reload users list
+                r2 = await self.api("GET", "/api/users/")
+                if r2.status_code == 200:
+                    self.users = [
+                        UserDict(
+                            id=str(u.get("id") or ""),
+                            name=str(u.get("name") or ""),
+                            username=str(u.get("username") or ""),
+                            role=str(u.get("role") or ""),
+                        )
+                        for u in r2.json()
+                    ]
+            else:
+                self.toast = f"Failed to delete employee ({r.status_code})."
+        except Exception as e:
+            self.toast = f"Delete error: {e}"
+        finally:
+            self.employee_mgmt_loading = False
+
+    # ── Task Detail (Employee View) ─────────────────────────────────────────
+    # Stub: referenced by employee_view.py table row on_click.
+
+    def open_task_detail(self, task_id: str) -> None:
+        """Placeholder for opening a task detail view from the employee table."""
+        pass

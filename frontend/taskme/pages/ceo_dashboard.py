@@ -5,6 +5,7 @@ import reflex as rx
 from taskme.components.progress_bar import progress_bar
 from taskme.components.status_badge import status_badge
 from taskme.state.task_state import TaskState
+from taskme.components.employee_management import employee_management_section
 
 
 # ── Shared dashboard chrome (tables + surfaces) ─────────────────────────────
@@ -305,7 +306,7 @@ def _summary_cards() -> rx.Component:
         kpi_card(
             "Done",
             TaskState.done_tasks,
-            "check-circle-2",
+            "circle-check",
             "#16A34A",
             "#16A34A",
             "rgba(22, 163, 74, 0.14)",
@@ -314,7 +315,7 @@ def _summary_cards() -> rx.Component:
         kpi_card(
             "Overdue",
             TaskState.overdue_tasks_count,
-            "alert-circle",
+            "circle-alert",
             "#DC2626",
             "#DC2626",
             "rgba(220, 38, 38, 0.12)",
@@ -808,7 +809,6 @@ def _task_table() -> rx.Component:
                                 ),
                                 margin_top="0.35rem",
                             ),
-                            # ── "Done" button REMOVED per requirement ──
                             rx.hstack(
                                 rx.button(
                                     "Reassign",
@@ -1296,9 +1296,7 @@ def _eod_report_row(r: rx.Var) -> rx.Component:
     is_expanded = TaskState.expanded_report_ids.contains(r["id"])
 
     return rx.box(
-        # ── Compact header: chevron | date | inline stats | button — all one line
         rx.hstack(
-            # Chevron + date (clickable)
             rx.hstack(
                 rx.cond(
                     is_expanded,
@@ -1312,7 +1310,6 @@ def _eod_report_row(r: rx.Var) -> rx.Component:
                 on_click=TaskState.toggle_report_expanded(r["id"]),
                 flex_shrink="0",
             ),
-            # Inline summary chips
             rx.hstack(
                 rx.hstack(
                     rx.text("Total", color="#94A3B8", font_size="0.72rem"),
@@ -1343,7 +1340,6 @@ def _eod_report_row(r: rx.Var) -> rx.Component:
                       on_click=TaskState.view_report(r["id"])),
             width="100%", align="center", spacing="4",
         ),
-        # ── Expanded detail — compact inline grid
         rx.cond(
             is_expanded,
             rx.hstack(
@@ -1383,7 +1379,6 @@ def _eod_report_row(r: rx.Var) -> rx.Component:
 
 
 def _eod_reports_pagination() -> rx.Component:
-    """Pagination controls for past EOD reports (5 per page)."""
     return rx.hstack(
         rx.button(
             rx.hstack(rx.icon("chevron-left", size=14), rx.text("Prev"), spacing="1", align="center"),
@@ -1480,7 +1475,6 @@ def _eod_reports_section() -> rx.Component:
                 box_shadow="inset 0 1px 0 rgba(255, 255, 255, 0.85)",
             ),
             rx.divider(border_color="rgba(15, 23, 42, 0.08)"),
-            # Past reports — collapsible rows with pagination
             rx.vstack(
                 rx.text("Past reports", color="#475569", font_weight="800", font_size="0.9rem"),
                 rx.cond(
@@ -1543,6 +1537,8 @@ def ceo_dashboard() -> rx.Component:
                         box_shadow="0 4px 24px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04)",
                     ),
                     _eod_reports_section(),
+                    # Employee management (NEW — additive, no existing logic changed)
+                    employee_management_section(),
                     # Dialogs
                     _add_task_dialog(),
                     _attach_dialog(),
