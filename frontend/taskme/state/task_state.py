@@ -1285,8 +1285,35 @@ class TaskState(AuthState):
             self.employee_mgmt_loading = False
 
     # ── Task Detail (Employee View) ─────────────────────────────────────────
-    # Stub: referenced by employee_view.py table row on_click.
+
+    show_task_detail_dialog: bool = False
+    detail_task: TaskDict = TaskDict(
+        id="", title="", description="", assigned_to="", assigned_to_name="",
+        status="", progress=0, deadline="", attachment_name="", attachments=[],
+        comment_count=0, submission_count=0, priority="medium", created_at="",
+        updated_at="", task_type="General", deadline_label="", deadline_label_color="",
+    )
 
     def open_task_detail(self, task_id: str) -> None:
-        """Placeholder for opening a task detail view from the employee table."""
-        pass
+        """Open a task detail popup from the employee table."""
+        task = next((t for t in self.tasks if t["id"] == task_id), None)
+        if not task:
+            return
+        self.detail_task = task
+        self.show_task_detail_dialog = True
+
+    def close_task_detail(self) -> None:
+        self.show_task_detail_dialog = False
+
+    def set_task_detail_dialog_open(self, open_: bool) -> None:
+        self.show_task_detail_dialog = bool(open_)
+
+    # ── Employee Mark Done ──────────────────────────────────────────────────
+
+    async def employee_mark_done(self, task_id: str) -> None:
+        """Employee marks their own task as done (sets progress to 100)."""
+        r = await self.api("PATCH", f"/api/tasks/{task_id}/progress", json={"progress": 100})
+        if r.status_code == 200:
+            await self.load_employee_tasks()
+        else:
+            self.toast = "Failed to mark task as done."

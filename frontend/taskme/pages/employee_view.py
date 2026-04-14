@@ -66,7 +66,7 @@ def _employee_mini_stats() -> rx.Component:
         _mini_stat_card(
             "Completed today",
             TaskState.employee_stat_completed_today,
-            "check-circle",
+            "circle-check",
             "#16A34A",
             "rgba(22, 163, 74, 0.14)",
         ),
@@ -80,7 +80,7 @@ def _employee_mini_stats() -> rx.Component:
         _mini_stat_card(
             "Overdue",
             TaskState.employee_stat_overdue,
-            "alert-circle",
+            "circle-alert",
             "#DC2626",
             "rgba(220, 38, 38, 0.12)",
         ),
@@ -268,7 +268,7 @@ def _task_table() -> rx.Component:
                             task["submission_count"] > 0,
                             rx.button(
                                 rx.hstack(
-                                    rx.icon("check-circle-2", size=13, color="white"),
+                                    rx.icon("circle-check", size=13, color="white"),
                                     rx.text("Submitted", font_size="0.72rem",
                                             font_weight="700", color="white"),
                                     spacing="1", align="center",
