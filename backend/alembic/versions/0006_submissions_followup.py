@@ -18,10 +18,14 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # 1. Add 'overdue' value to task_status enum
-    op.execute("ALTER TYPE task_status ADD VALUE IF NOT EXISTS 'overdue'")
+    # 1. Add 'overdue' value to task_status enum.
+    # `ALTER TYPE ... ADD VALUE` cannot run inside a multi-statement transaction
+    # on some PostgreSQL configurations. We use an autocommit block so this
+    # statement runs on its own connection, avoiding that failure mode.
+    with op.get_context().autocommit_block():
+        op.execute("ALTER TYPE task_status ADD VALUE IF NOT EXISTS 'overdue'")
 
-    # 2. Add last_activity_at column to tasks (default to created_at via now())
+    # 2. Add last_activity_at column to tasks (default to now()).
     op.add_column(
         "tasks",
         sa.Column(
@@ -31,10 +35,10 @@ def upgrade() -> None:
             nullable=False,
         ),
     )
-    # Backfill existing rows: set last_activity_at = updated_at
+    # Backfill existing rows: set last_activity_at = updated_at.
     op.execute("UPDATE tasks SET last_activity_at = updated_at")
 
-    # 3. Create task_submissions table
+    # 3. Create task_submissions table.
     op.create_table(
         "task_submissions",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -67,4 +71,4 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_table("task_submissions")
     op.drop_column("tasks", "last_activity_at")
-    # Note: cannot remove enum value in PostgreSQL without recreating the type
+    # Note: cannot remove enum value in PostgreSQL without recreating the type.

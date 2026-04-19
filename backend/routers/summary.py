@@ -33,11 +33,6 @@ def task_counts(
     try:
         today = date.today()
 
-        if user.role == "ceo":
-            base = select(Task)
-        else:
-            base = select(Task).where(Task.assigned_to == user.id)
-
         counts_q = select(
             func.count().label("total"),
             func.count().filter(Task.status == TaskStatus.pending).label("pending"),
@@ -48,12 +43,13 @@ def task_counts(
                 Task.status != TaskStatus.done,
             ).label("overdue"),
             func.max(Task.updated_at).label("last_updated"),
-        )
+        ).select_from(Task)
 
+        # Employee role: scope to tasks assigned to them only.
         if user.role != "ceo":
             counts_q = counts_q.where(Task.assigned_to == user.id)
 
-        row = db.execute(counts_q.select_from(Task)).one()
+        row = db.execute(counts_q).one()
 
         return {
             "total": row.total,

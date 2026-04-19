@@ -34,683 +34,339 @@ def _employee_page_styles() -> rx.Component:
 def _mini_stat_card(label: str, value, icon_name: str, accent: str, bg: str) -> rx.Component:
     return rx.box(
         rx.hstack(
-            rx.box(
-                rx.icon(icon_name, size=18, color=accent),
-                padding="0.5rem",
-                border_radius="10px",
-                background_color=bg,
-            ),
-            rx.vstack(
-                rx.text(value.to_string(), font_weight="900", font_size="1.25rem", color="#0F172A",
-                        line_height="1.1"),
-                rx.text(label, font_size="0.7rem", color="#64748B", font_weight="600"),
-                spacing="0",
-                align_items="start",
-            ),
-            spacing="3",
-            align="center",
-            width="100%",
-        ),
-        padding="0.75rem",
-        border_radius="12px",
-        border="1px solid rgba(15, 23, 42, 0.07)",
-        background_color="#FFFFFF",
-        box_shadow="0 2px 8px rgba(15, 23, 42, 0.04)",
-        width="100%",
-    )
+            rx.box(rx.icon(icon_name, size=18, color=accent), padding="0.5rem", border_radius="10px", background_color=bg),
+            rx.vstack(rx.text(value.to_string(), font_weight="900", font_size="1.25rem", color="#0F172A", line_height="1.1"),
+                rx.text(label, font_size="0.7rem", color="#64748B", font_weight="600"), spacing="0", align_items="start"),
+            spacing="3", align="center", width="100%"),
+        padding="0.75rem", border_radius="12px", border="1px solid rgba(15, 23, 42, 0.07)",
+        background_color="#FFFFFF", box_shadow="0 2px 8px rgba(15, 23, 42, 0.04)", width="100%")
 
 
 def _employee_mini_stats() -> rx.Component:
-    """4 stats in a single horizontal row."""
     return rx.grid(
-        _mini_stat_card(
-            "Completed today",
-            TaskState.employee_stat_completed_today,
-            "circle-check",
-            "#16A34A",
-            "rgba(22, 163, 74, 0.14)",
-        ),
-        _mini_stat_card(
-            "Pending tasks",
-            TaskState.employee_stat_pending,
-            "circle-dashed",
-            "#CA8A04",
-            "rgba(202, 138, 4, 0.15)",
-        ),
-        _mini_stat_card(
-            "Overdue",
-            TaskState.employee_stat_overdue,
-            "circle-alert",
-            "#DC2626",
-            "rgba(220, 38, 38, 0.12)",
-        ),
-        _mini_stat_card(
-            "Avg completion",
-            TaskState.employee_stat_avg_completion_days,
-            "timer",
-            "#2563EB",
-            "rgba(37, 99, 235, 0.12)",
-        ),
-        columns={"initial": "2", "sm": "4"},
-        spacing="3",
-        width="100%",
-    )
+        _mini_stat_card("Completed today", TaskState.employee_stat_completed_today, "circle-check", "#16A34A", "rgba(22, 163, 74, 0.14)"),
+        _mini_stat_card("Pending tasks", TaskState.employee_stat_pending, "circle-dashed", "#CA8A04", "rgba(202, 138, 4, 0.15)"),
+        _mini_stat_card("Overdue", TaskState.employee_stat_overdue, "circle-alert", "#DC2626", "rgba(220, 38, 38, 0.12)"),
+        _mini_stat_card("Avg completion", TaskState.employee_stat_avg_completion_days, "timer", "#2563EB", "rgba(37, 99, 235, 0.12)"),
+        columns={"initial": "2", "sm": "4"}, spacing="3", width="100%")
 
 
 def _priority_badge(priority) -> rx.Component:
     return rx.badge(
-        rx.cond(
-            priority == "high",
-            "High",
-            rx.cond(priority == "low", "Low", "Medium"),
-        ),
-        color_scheme=rx.cond(
-            priority == "high",
-            "red",
-            rx.cond(priority == "low", "green", "yellow"),
-        ),
-        variant="solid",
-        padding_x="0.5rem",
-        padding_y="0.2rem",
-        font_size="0.7rem",
-        font_weight="700",
-        border_radius="999px",
-    )
+        rx.cond(priority == "high", "High", rx.cond(priority == "low", "Low", "Medium")),
+        color_scheme=rx.cond(priority == "high", "red", rx.cond(priority == "low", "green", "yellow")),
+        variant="solid", padding_x="0.5rem", padding_y="0.2rem", font_size="0.7rem", font_weight="700", border_radius="999px")
 
 
-# ── Tabular task view ──────────────────────────────────────────────────────
+# ── Task table with SLIDER for progress (Feature 2) ────────────────────────
 
 def _task_table() -> rx.Component:
     return rx.table.root(
-        rx.table.header(
-            rx.table.row(
-                rx.table.column_header_cell("Task"),
-                rx.table.column_header_cell("Priority"),
-                rx.table.column_header_cell("Status"),
-                rx.table.column_header_cell("Attachments Shared"),
-                rx.table.column_header_cell("Deadline"),
-                rx.table.column_header_cell("Progress"),
-                rx.table.column_header_cell("Comments"),
-                rx.table.column_header_cell("Submit Work"),
-                rx.table.column_header_cell("Done"),
-            )
-        ),
-        rx.table.body(
-            rx.foreach(
-                TaskState.tasks,
-                lambda task: rx.table.row(
-                    # ── Task (title clickable + truncated description) ──
-                    rx.table.cell(
-                        rx.vstack(
-                            rx.text(task["title"], color="#0F172A", font_weight="700",
-                                    font_size="0.9rem", cursor="pointer",
-                                    _hover={"color": "#F97316", "text_decoration": "underline"},
-                                    on_click=TaskState.open_task_detail(task["id"])),
-                            rx.text(
-                                task["description"],
-                                color="#64748B",
-                                font_size="0.78rem",
-                                max_width="200px",
-                                overflow="hidden",
-                                text_overflow="ellipsis",
-                                white_space="nowrap",
-                            ),
-                            spacing="1",
-                        ),
-                    ),
-                    # ── Priority ──
-                    rx.table.cell(_priority_badge(task["priority"])),
-                    # ── Status ──
-                    rx.table.cell(
-                        rx.vstack(
-                            status_badge(task["status"]),
-                            rx.text(
-                                task["deadline_label"],
-                                font_size="0.68rem",
-                                font_weight="600",
-                                color=task["deadline_label_color"],
-                            ),
-                            spacing="1",
-                            align="start",
-                        ),
-                    ),
-                    # ── Attachments Shared (CEO attachments) ──
-                    rx.table.cell(
-                        rx.cond(
-                            task["attachments"].length() > 0,
-                            rx.vstack(
-                                rx.foreach(
-                                    task["attachments"],
-                                    lambda a: rx.hstack(
-                                        rx.icon_button(
-                                            rx.icon("eye", size=11), size="1", variant="ghost",
-                                            color_scheme="orange",
-                                            on_click=TaskState.open_preview(
-                                                task["id"], a["id"], a["file_name"]),
-                                            title="Preview",
-                                        ),
-                                        rx.text(a["file_name"], color="#374151", font_size="0.72rem",
-                                                max_width="100px", overflow="hidden",
-                                                text_overflow="ellipsis", white_space="nowrap"),
-                                        rx.icon_button(
-                                            rx.icon("download", size=11), size="1", variant="ghost",
-                                            color_scheme="orange",
-                                            on_click=TaskState.download_attachment(
-                                                task["id"], a["id"], a["file_name"]),
-                                            title="Download",
-                                        ),
-                                        spacing="1", align="center",
-                                    ),
-                                ),
-                                spacing="1", align="start",
-                            ),
-                            rx.text("—", color="#D1D5DB", font_size="0.82rem"),
-                        ),
-                    ),
-                    # ── Deadline ──
-                    rx.table.cell(
-                        rx.text(task["deadline"].to_string(), color="#64748B",
-                                font_size="0.82rem"),
-                    ),
-                    # ── Progress ──
-                    rx.table.cell(
-                        rx.vstack(
-                            rx.text(
-                                task["progress"].to_string() + "%",
-                                font_size="0.82rem",
-                                font_weight="700",
-                                color="#334155",
-                            ),
-                            rx.box(
-                                rx.box(
-                                    style={
-                                        "width": task["progress"].to_string() + "%",
-                                        "height": "100%",
-                                        "border_radius": "999px",
-                                        "background": "linear-gradient(90deg, #EA580C 0%, #FACC15 50%, #22C55E 100%)",
-                                        "background_size": "220% 100%",
-                                        "transition": "width 0.5s ease",
-                                    },
-                                ),
-                                style={
-                                    "width": "100%",
-                                    "height": "6px",
-                                    "border_radius": "999px",
-                                    "background_color": "rgba(15, 23, 42, 0.08)",
-                                    "overflow": "hidden",
-                                    "min_width": "70px",
-                                },
-                            ),
-                            spacing="1",
-                            align="start",
-                            width="100%",
-                        ),
-                    ),
-                    # ── Comments ──
-                    rx.table.cell(
-                        rx.button(
-                            rx.hstack(
-                                rx.icon("message-square", size=13),
-                                rx.text(task["comment_count"].to_string(),
-                                        font_size="0.78rem", font_weight="600"),
-                                spacing="1",
-                                align="center",
-                            ),
-                            variant="outline",
+        rx.table.header(rx.table.row(
+            rx.table.column_header_cell("Task"),
+            rx.table.column_header_cell("Priority"),
+            rx.table.column_header_cell("Status"),
+            rx.table.column_header_cell("Attachments Shared"),
+            rx.table.column_header_cell("Deadline"),
+            rx.table.column_header_cell("Progress"),
+            rx.table.column_header_cell("Comments"),
+            rx.table.column_header_cell("Submit Work"),
+            rx.table.column_header_cell("Done"),
+        )),
+        rx.table.body(rx.foreach(TaskState.tasks, lambda task: rx.table.row(
+            # ── Task (title clickable) ──
+            rx.table.cell(rx.vstack(
+                rx.text(task["title"], color="#0F172A", font_weight="700", font_size="0.9rem",
+                        cursor="pointer", _hover={"color": "#F97316", "text_decoration": "underline"},
+                        on_click=TaskState.open_task_detail(task["id"])),
+                rx.text(task["description"], color="#64748B", font_size="0.78rem", max_width="200px",
+                        overflow="hidden", text_overflow="ellipsis", white_space="nowrap"),
+                spacing="1")),
+            # ── Priority ──
+            rx.table.cell(_priority_badge(task["priority"])),
+            # ── Status ──
+            rx.table.cell(rx.vstack(
+                status_badge(task["status"]),
+                rx.text(task["deadline_label"], font_size="0.68rem", font_weight="600", color=task["deadline_label_color"]),
+                spacing="1", align="start")),
+            # ── Attachments Shared ──
+            rx.table.cell(rx.cond(task["attachments"].length() > 0,
+                rx.vstack(rx.foreach(task["attachments"], lambda a: rx.hstack(
+                    rx.icon_button(rx.icon("eye", size=11), size="1", variant="ghost", color_scheme="orange",
+                        on_click=TaskState.open_preview(task["id"], a["id"], a["file_name"]), title="Preview"),
+                    rx.text(a["file_name"], color="#374151", font_size="0.72rem", max_width="100px",
+                            overflow="hidden", text_overflow="ellipsis", white_space="nowrap"),
+                    rx.icon_button(rx.icon("download", size=11), size="1", variant="ghost", color_scheme="orange",
+                        on_click=TaskState.download_attachment(task["id"], a["id"], a["file_name"]), title="Download"),
+                    spacing="1", align="center")), spacing="1", align="start"),
+                rx.text("\u2014", color="#D1D5DB", font_size="0.82rem"))),
+            # ── Deadline ──
+            rx.table.cell(rx.text(task["deadline"].to_string(), color="#64748B", font_size="0.82rem")),
+            # ── Progress (SLIDER — Feature 2) ──
+            rx.table.cell(
+                rx.cond(
+                    task["status"] == "done",
+                    # If done, show static 100% bar — no slider interaction
+                    rx.vstack(
+                        rx.text("100%", font_size="0.82rem", font_weight="700", color="#16A34A"),
+                        rx.box(rx.box(style={"width": "100%", "height": "100%", "border_radius": "999px",
+                            "background": "linear-gradient(90deg, #EA580C 0%, #FACC15 50%, #22C55E 100%)"}),
+                            style={"width": "100%", "height": "6px", "border_radius": "999px",
+                                   "background_color": "rgba(15, 23, 42, 0.08)", "overflow": "hidden", "min_width": "70px"}),
+                        spacing="1", align="start", width="100%"),
+                    # Active task: interactive slider
+                    rx.vstack(
+                        rx.text(task["progress"].to_string() + "%", font_size="0.82rem", font_weight="700", color="#334155"),
+                        rx.slider(
+                            default_value=task["progress"],
+                            min=0, max=100, step=1,
                             color_scheme="orange",
-                            size="1",
-                            on_click=TaskState.open_comments_dialog(task["id"]),
+                            width="100%",
+                            on_value_commit=TaskState.update_slider_progress(task["id"]),
                         ),
-                    ),
-                    # ── Submit Work ──
-                    rx.table.cell(
-                        rx.cond(
-                            task["submission_count"] > 0,
-                            rx.button(
-                                rx.hstack(
-                                    rx.icon("circle-check", size=13, color="white"),
-                                    rx.text("Submitted", font_size="0.72rem",
-                                            font_weight="700", color="white"),
-                                    spacing="1", align="center",
-                                ),
-                                color_scheme="green",
-                                variant="solid",
-                                size="1",
-                                on_click=TaskState.open_submissions_dialog(task["id"]),
-                            ),
-                            rx.button(
-                                rx.hstack(
-                                    rx.icon("upload-cloud", size=13),
-                                    rx.text("Submit", font_size="0.72rem", font_weight="600"),
-                                    spacing="1", align="center",
-                                ),
-                                color_scheme="green",
-                                variant="outline",
-                                size="1",
-                                on_click=TaskState.open_submissions_dialog(task["id"]),
-                            ),
-                        ),
-                    ),
-                    # ── Done ──
-                    rx.table.cell(
-                        rx.cond(
-                            task["status"] == "done",
-                            rx.badge(
-                                rx.hstack(
-                                    rx.icon("check", size=12, color="white"),
-                                    rx.text("Done", font_size="0.72rem", color="white"),
-                                    spacing="1", align="center",
-                                ),
-                                color_scheme="green",
-                                variant="solid",
-                                size="1",
-                            ),
-                            rx.button(
-                                rx.hstack(
-                                    rx.icon("circle-check", size=13),
-                                    rx.text("Mark Done", font_size="0.72rem", font_weight="600"),
-                                    spacing="1", align="center",
-                                ),
-                                color_scheme="blue",
-                                variant="outline",
-                                size="1",
-                                on_click=TaskState.employee_mark_done(task["id"]),
-                            ),
-                        ),
-                    ),
+                        spacing="1", align="start", width="100%", min_width="90px"),
                 ),
             ),
-        ),
-        width="100%",
-        class_name="emp-task-table",
-    )
+            # ── Comments ──
+            rx.table.cell(rx.button(
+                rx.hstack(rx.icon("message-square", size=13),
+                    rx.text(task["comment_count"].to_string(), font_size="0.78rem", font_weight="600"),
+                    spacing="1", align="center"),
+                variant="outline", color_scheme="orange", size="1",
+                on_click=TaskState.open_comments_dialog(task["id"]))),
+            # ── Submit Work ──
+            rx.table.cell(rx.cond(task["submission_count"] > 0,
+                rx.button(rx.hstack(rx.icon("circle-check", size=13, color="white"),
+                    rx.text("Submitted", font_size="0.72rem", font_weight="700", color="white"),
+                    spacing="1", align="center"),
+                    color_scheme="green", variant="solid", size="1",
+                    on_click=TaskState.open_submissions_dialog(task["id"])),
+                rx.button(rx.hstack(rx.icon("upload-cloud", size=13),
+                    rx.text("Submit", font_size="0.72rem", font_weight="600"), spacing="1", align="center"),
+                    color_scheme="green", variant="outline", size="1",
+                    on_click=TaskState.open_submissions_dialog(task["id"])))),
+            # ── Done ──
+            rx.table.cell(rx.cond(task["status"] == "done",
+                rx.badge(rx.hstack(rx.icon("check", size=12, color="white"),
+                    rx.text("Done", font_size="0.72rem", color="white"), spacing="1", align="center"),
+                    color_scheme="green", variant="solid", size="1"),
+                rx.button(rx.hstack(rx.icon("circle-check", size=13),
+                    rx.text("Mark Done", font_size="0.72rem", font_weight="600"), spacing="1", align="center"),
+                    color_scheme="blue", variant="outline", size="1",
+                    on_click=TaskState.employee_mark_done(task["id"])))),
+        ))),
+        width="100%", class_name="emp-task-table")
 
 
-# ── Pagination controls ────────────────────────────────────────────────────
+# ── Pagination (unchanged) ─────────────────────────────────────────────────
 
 def _employee_pagination() -> rx.Component:
     return rx.hstack(
-        rx.button(
-            rx.hstack(rx.icon("chevron-left", size=14), rx.text("Prev"), spacing="1", align="center"),
-            on_click=TaskState.go_prev_page,
-            is_disabled=~TaskState.has_prev_page,
-            variant="outline",
-            size="2",
-            color_scheme="orange",
-        ),
-        rx.hstack(
-            rx.text("Page", color="#6B7280", font_size="0.85rem"),
+        rx.button(rx.hstack(rx.icon("chevron-left", size=14), rx.text("Prev"), spacing="1", align="center"),
+            on_click=TaskState.go_prev_page, is_disabled=~TaskState.has_prev_page, variant="outline", size="2", color_scheme="orange"),
+        rx.hstack(rx.text("Page", color="#6B7280", font_size="0.85rem"),
             rx.text(TaskState.current_page.to_string(), font_weight="700", color="#1A1A1A", font_size="0.95rem"),
             rx.text("of", color="#6B7280", font_size="0.85rem"),
             rx.text(TaskState.total_pages.to_string(), font_weight="700", color="#1A1A1A", font_size="0.95rem"),
-            spacing="2", align="center",
-        ),
-        rx.button(
-            rx.hstack(rx.text("Next"), rx.icon("chevron-right", size=14), spacing="1", align="center"),
-            on_click=TaskState.go_next_page,
-            is_disabled=~TaskState.has_next_page,
-            variant="outline",
-            size="2",
-            color_scheme="orange",
-        ),
-        spacing="4", justify="center", width="100%", padding_y="0.75rem",
-    )
+            spacing="2", align="center"),
+        rx.button(rx.hstack(rx.text("Next"), rx.icon("chevron-right", size=14), spacing="1", align="center"),
+            on_click=TaskState.go_next_page, is_disabled=~TaskState.has_next_page, variant="outline", size="2", color_scheme="orange"),
+        spacing="4", justify="center", width="100%", padding_y="0.75rem")
 
 
-# ── Task detail popup ───────────────────────────────────────────────────────
+# ── Task detail dialog (unchanged) ──────────────────────────────────────────
 
 def _task_detail_dialog() -> rx.Component:
     t = TaskState.detail_task
     return rx.dialog.root(
-        rx.dialog.content(
-            rx.vstack(
+        rx.dialog.content(rx.vstack(
+            rx.hstack(rx.icon("file-text", size=20, color="#F97316"),
+                rx.text("Task Details", font_size="1.2rem", font_weight="900", color="#1A1A1A"), rx.spacer(),
                 rx.hstack(
-                    rx.icon("file-text", size=20, color="#F97316"),
-                    rx.text("Task Details", font_size="1.2rem", font_weight="900", color="#1A1A1A"),
-                    rx.spacer(),
-                    rx.hstack(
-                        rx.badge(
-                            rx.cond(t["priority"] == "high", "High",
-                                    rx.cond(t["priority"] == "low", "Low", "Medium")),
-                            color_scheme=rx.cond(t["priority"] == "high", "red",
-                                                 rx.cond(t["priority"] == "low", "green", "orange")),
-                            variant="solid", size="2",
-                        ),
-                        status_badge(t["status"]),
-                        spacing="2", align="center",
-                    ),
-                    width="100%", align="center",
-                ),
-                rx.divider(border_color="rgba(15, 23, 42, 0.08)"),
-                rx.text(t["title"], font_size="1.25rem", font_weight="800", color="#0F172A",
-                        line_height="1.35"),
-                rx.box(
-                    rx.text(t["description"], color="#374151", font_size="0.92rem",
-                            line_height="1.65", white_space="pre-wrap"),
-                    width="100%", max_height="40vh", overflow_y="auto",
-                    padding="1rem",
-                    border="1px solid rgba(15, 23, 42, 0.06)",
-                    border_radius="12px",
-                    background_color="rgba(248, 250, 252, 0.8)",
-                ),
-                rx.grid(
-                    rx.vstack(
-                        rx.text("Deadline", color="#94A3B8", font_size="0.72rem",
-                                font_weight="600", text_transform="uppercase", letter_spacing="0.05em"),
-                        rx.text(t["deadline"].to_string(), color="#1A1A1A", font_weight="600",
-                                font_size="0.88rem"),
-                        spacing="1", align="start",
-                    ),
-                    rx.vstack(
-                        rx.text("Progress", color="#94A3B8", font_size="0.72rem",
-                                font_weight="600", text_transform="uppercase", letter_spacing="0.05em"),
-                        rx.text(t["progress"].to_string() + "%", color="#1A1A1A", font_weight="700",
-                                font_size="0.88rem"),
-                        spacing="1", align="start",
-                    ),
-                    rx.vstack(
-                        rx.text("Created", color="#94A3B8", font_size="0.72rem",
-                                font_weight="600", text_transform="uppercase", letter_spacing="0.05em"),
-                        rx.text(t["created_at"].to_string()[:10], color="#1A1A1A", font_weight="600",
-                                font_size="0.88rem"),
-                        spacing="1", align="start",
-                    ),
-                    columns="3", spacing="3", width="100%",
-                    padding="0.75rem", border="1px solid rgba(15, 23, 42, 0.06)",
-                    border_radius="10px", background_color="#FFFFFF",
-                ),
-                rx.cond(
-                    t["attachments"].length() > 0,
-                    rx.vstack(
-                        rx.hstack(
-                            rx.icon("paperclip", size=14, color="#F97316"),
-                            rx.text("Attachments (" + t["attachments"].length().to_string() + ")",
-                                    color="#1A1A1A", font_size="0.85rem", font_weight="700"),
-                            spacing="2", align="center",
-                        ),
-                        rx.foreach(
-                            t["attachments"],
-                            lambda a: rx.hstack(
-                                rx.icon("file", size=13, color="#64748B"),
-                                rx.text(a["file_name"], color="#374151", font_size="0.82rem"),
-                                rx.spacer(),
-                                rx.icon_button(
-                                    rx.icon("download", size=13), size="1", variant="ghost",
-                                    color_scheme="orange",
-                                    on_click=TaskState.download_attachment(t["id"], a["id"], a["file_name"]),
-                                ),
-                                width="100%", align="center", padding="0.35rem 0.5rem",
-                                border="1px solid rgba(15, 23, 42, 0.06)", border_radius="8px",
-                            ),
-                        ),
-                        spacing="2", width="100%", padding="0.5rem",
-                        border="1px dashed rgba(249, 115, 22, 0.25)", border_radius="10px",
-                    ),
-                    rx.box(),
-                ),
-                rx.hstack(
-                    rx.button("Close", variant="outline", on_click=TaskState.close_task_detail),
-                    justify="end", width="100%",
-                ),
-                spacing="3", padding="1.5rem", background_color="#FFFFFF",
-                border_radius="12px", width="100%",
-            ),
-            max_width="640px",
-        ),
-        open=TaskState.show_task_detail_dialog,
-        on_open_change=TaskState.set_task_detail_dialog_open,
-    )
+                    rx.badge(rx.cond(t["priority"] == "high", "High", rx.cond(t["priority"] == "low", "Low", "Medium")),
+                        color_scheme=rx.cond(t["priority"] == "high", "red", rx.cond(t["priority"] == "low", "green", "orange")),
+                        variant="solid", size="2"),
+                    status_badge(t["status"]), spacing="2", align="center"),
+                width="100%", align="center"),
+            rx.divider(border_color="rgba(15, 23, 42, 0.08)"),
+            rx.text(t["title"], font_size="1.25rem", font_weight="800", color="#0F172A", line_height="1.35"),
+            rx.box(rx.text(t["description"], color="#374151", font_size="0.92rem", line_height="1.65", white_space="pre-wrap"),
+                width="100%", max_height="40vh", overflow_y="auto", padding="1rem",
+                border="1px solid rgba(15, 23, 42, 0.06)", border_radius="12px", background_color="rgba(248, 250, 252, 0.8)"),
+            rx.grid(
+                rx.vstack(rx.text("Deadline", color="#94A3B8", font_size="0.72rem", font_weight="600", text_transform="uppercase", letter_spacing="0.05em"),
+                    rx.text(t["deadline"].to_string(), color="#1A1A1A", font_weight="600", font_size="0.88rem"), spacing="1", align="start"),
+                rx.vstack(rx.text("Progress", color="#94A3B8", font_size="0.72rem", font_weight="600", text_transform="uppercase", letter_spacing="0.05em"),
+                    rx.text(t["progress"].to_string() + "%", color="#1A1A1A", font_weight="700", font_size="0.88rem"), spacing="1", align="start"),
+                rx.vstack(rx.text("Created", color="#94A3B8", font_size="0.72rem", font_weight="600", text_transform="uppercase", letter_spacing="0.05em"),
+                    rx.text(t["created_at"].to_string()[:10], color="#1A1A1A", font_weight="600", font_size="0.88rem"), spacing="1", align="start"),
+                columns="3", spacing="3", width="100%", padding="0.75rem",
+                border="1px solid rgba(15, 23, 42, 0.06)", border_radius="10px", background_color="#FFFFFF"),
+            rx.cond(t["attachments"].length() > 0,
+                rx.vstack(
+                    rx.hstack(rx.icon("paperclip", size=14, color="#F97316"),
+                        rx.text("Attachments (" + t["attachments"].length().to_string() + ")", color="#1A1A1A", font_size="0.85rem", font_weight="700"),
+                        spacing="2", align="center"),
+                    rx.foreach(t["attachments"], lambda a: rx.hstack(
+                        rx.icon("file", size=13, color="#64748B"), rx.text(a["file_name"], color="#374151", font_size="0.82rem"), rx.spacer(),
+                        rx.icon_button(rx.icon("download", size=13), size="1", variant="ghost", color_scheme="orange",
+                            on_click=TaskState.download_attachment(t["id"], a["id"], a["file_name"])),
+                        width="100%", align="center", padding="0.35rem 0.5rem",
+                        border="1px solid rgba(15, 23, 42, 0.06)", border_radius="8px")),
+                    spacing="2", width="100%", padding="0.5rem", border="1px dashed rgba(249, 115, 22, 0.25)", border_radius="10px"),
+                rx.box()),
+            rx.hstack(rx.button("Close", variant="outline", on_click=TaskState.close_task_detail), justify="end", width="100%"),
+            spacing="3", padding="1.5rem", background_color="#FFFFFF", border_radius="12px", width="100%"), max_width="640px"),
+        open=TaskState.show_task_detail_dialog, on_open_change=TaskState.set_task_detail_dialog_open)
 
 
-# ── Shared dialogs ──────────────────────────────────────────────────────────
+# ── Comments dialog (unchanged) ─────────────────────────────────────────────
 
 def _comments_dialog() -> rx.Component:
     return rx.dialog.root(
-        rx.dialog.content(
-            rx.vstack(
-                rx.hstack(rx.icon("message-square", size=20, color="#F97316"),
-                          rx.text("Comments", font_size="1.2rem", font_weight="900", color="#1A1A1A"),
-                          rx.spacer(),
-                          rx.text(TaskState.comments_task_title, color="#6B7280", font_size="0.85rem",
-                                  max_width="200px", overflow="hidden", text_overflow="ellipsis",
-                                  white_space="nowrap"),
-                          width="100%", align="center"),
-                rx.divider(border_color="rgba(251,146,60,0.25)"),
-                rx.box(
-                    rx.cond(TaskState.comments_loading, rx.center(rx.spinner(), padding="2rem"),
-                            rx.cond(TaskState.comments.length() > 0,
-                                    rx.vstack(rx.foreach(TaskState.comments,
-                                        lambda c: rx.box(rx.hstack(
-                                            rx.box(rx.text(c["author_name"][:1].to_string(), color="white",
-                                                          font_weight="700", font_size="0.75rem"),
-                                                   width="28px", height="28px", border_radius="50%",
-                                                   background_color="#F97316", display="flex",
-                                                   align_items="center", justify_content="center", flex_shrink="0"),
-                                            rx.vstack(rx.hstack(rx.text(c["author_name"], font_weight="700",
-                                                                        color="#1A1A1A", font_size="0.85rem"),
-                                                                rx.text(c["created_at"].to_string(), color="#9CA3AF",
-                                                                        font_size="0.72rem"), spacing="2", align="center"),
-                                                      rx.text(c["body"], color="#374151", font_size="0.88rem",
-                                                              white_space="pre-wrap"),
-                                                      spacing="1", align="start", width="100%"),
-                                            spacing="3", align="start", width="100%"),
-                                            padding="0.6rem", border_radius="8px", background_color="#FFF8F3", width="100%")),
-                                        spacing="2", width="100%"),
-                                    rx.center(rx.vstack(rx.icon("message-square", size=32, color="#D1D5DB"),
-                                                        rx.text("No comments yet", color="#9CA3AF"),
-                                                        spacing="2", align="center"), padding="2rem"))),
-                    max_height="40vh", overflow_y="auto", width="100%", padding="0.25rem"),
-                rx.divider(border_color="rgba(251,146,60,0.25)"),
-                rx.hstack(rx.text_area(placeholder="Write a comment...", value=TaskState.new_comment_body,
-                                       on_change=TaskState.set_new_comment_body, width="100%",
-                                       min_height="60px", max_height="100px"),
-                          rx.button(rx.icon("send", size=16), color_scheme="orange", size="2",
-                                    on_click=TaskState.post_comment),
-                          spacing="2", width="100%", align="end"),
-                spacing="3", padding="1.5rem", background_color="#FFFFFF", border_radius="12px", width="100%"),
-            max_width="600px"),
+        rx.dialog.content(rx.vstack(
+            rx.hstack(rx.icon("message-square", size=20, color="#F97316"),
+                rx.text("Comments", font_size="1.2rem", font_weight="900", color="#1A1A1A"), rx.spacer(),
+                rx.text(TaskState.comments_task_title, color="#6B7280", font_size="0.85rem", max_width="200px",
+                        overflow="hidden", text_overflow="ellipsis", white_space="nowrap"), width="100%", align="center"),
+            rx.divider(border_color="rgba(251,146,60,0.25)"),
+            rx.box(rx.cond(TaskState.comments_loading, rx.center(rx.spinner(), padding="2rem"),
+                rx.cond(TaskState.comments.length() > 0,
+                    rx.vstack(rx.foreach(TaskState.comments, lambda c: rx.box(rx.hstack(
+                        rx.box(rx.text(c["author_name"][:1].to_string(), color="white", font_weight="700", font_size="0.75rem"),
+                            width="28px", height="28px", border_radius="50%", background_color="#F97316",
+                            display="flex", align_items="center", justify_content="center", flex_shrink="0"),
+                        rx.vstack(rx.hstack(rx.text(c["author_name"], font_weight="700", color="#1A1A1A", font_size="0.85rem"),
+                            rx.text(c["created_at"].to_string(), color="#9CA3AF", font_size="0.72rem"), spacing="2", align="center"),
+                            rx.text(c["body"], color="#374151", font_size="0.88rem", white_space="pre-wrap"),
+                            spacing="1", align="start", width="100%"),
+                        spacing="3", align="start", width="100%"),
+                        padding="0.6rem", border_radius="8px", background_color="#FFF8F3", width="100%")), spacing="2", width="100%"),
+                    rx.center(rx.vstack(rx.icon("message-square", size=32, color="#D1D5DB"),
+                        rx.text("No comments yet", color="#9CA3AF"), spacing="2", align="center"), padding="2rem"))),
+                max_height="40vh", overflow_y="auto", width="100%", padding="0.25rem"),
+            rx.divider(border_color="rgba(251,146,60,0.25)"),
+            rx.hstack(rx.text_area(placeholder="Write a comment...", value=TaskState.new_comment_body,
+                on_change=TaskState.set_new_comment_body, width="100%", min_height="60px", max_height="100px"),
+                rx.button(rx.icon("send", size=16), color_scheme="orange", size="2", on_click=TaskState.post_comment),
+                spacing="2", width="100%", align="end"),
+            spacing="3", padding="1.5rem", background_color="#FFFFFF", border_radius="12px", width="100%"), max_width="600px"),
         open=TaskState.show_comments_dialog, on_open_change=TaskState.set_comments_dialog_open)
 
 
 def _preview_dialog() -> rx.Component:
     return rx.dialog.root(
-        rx.dialog.content(
-            rx.vstack(
-                rx.hstack(rx.icon("eye", size=18, color="#F97316"),
-                          rx.text("Preview", font_size="1.1rem", font_weight="900", color="#1A1A1A"),
-                          rx.spacer(), rx.text(TaskState.preview_file_name, color="#6B7280", font_size="0.85rem"),
-                          width="100%", align="center"),
-                rx.divider(border_color="rgba(251,146,60,0.25)"),
-                rx.box(
-                    rx.cond(TaskState.preview_is_image,
-                            rx.el.img(id="taskme-preview-img", src="", alt=TaskState.preview_file_name,
-                                      style={"max_width": "100%", "max_height": "60vh", "border_radius": "8px",
-                                             "object_fit": "contain"}),
-                            rx.cond(TaskState.preview_is_pdf,
-                                    rx.el.iframe(id="taskme-preview-frame", src="", width="100%", height="500px",
-                                                 style={"border": "none", "border_radius": "8px"}),
-                                    rx.center(rx.vstack(rx.icon("file", size=48, color="#D1D5DB"),
-                                                        rx.text("Preview not available for this file type.", color="#6B7280"),
-                                                        rx.text("Click download to view.", color="#9CA3AF", font_size="0.82rem"),
-                                                        spacing="2", align="center"), padding="3rem"))),
-                    width="100%", min_height="200px", display="flex", align_items="center", justify_content="center"),
-                rx.hstack(rx.button("Close", variant="outline", on_click=TaskState.close_preview),
-                          justify="end", width="100%"),
-                spacing="3", padding="1.5rem", background_color="#FFFFFF", border_radius="12px", width="100%"),
-            max_width="720px"),
+        rx.dialog.content(rx.vstack(
+            rx.hstack(rx.icon("eye", size=18, color="#F97316"), rx.text("Preview", font_size="1.1rem", font_weight="900", color="#1A1A1A"),
+                rx.spacer(), rx.text(TaskState.preview_file_name, color="#6B7280", font_size="0.85rem"), width="100%", align="center"),
+            rx.divider(border_color="rgba(251,146,60,0.25)"),
+            rx.box(rx.cond(TaskState.preview_is_image,
+                rx.el.img(id="taskme-preview-img", src="", alt=TaskState.preview_file_name,
+                    style={"max_width": "100%", "max_height": "60vh", "border_radius": "8px", "object_fit": "contain"}),
+                rx.cond(TaskState.preview_is_pdf,
+                    rx.el.iframe(id="taskme-preview-frame", src="", width="100%", height="500px", style={"border": "none", "border_radius": "8px"}),
+                    rx.center(rx.vstack(rx.icon("file", size=48, color="#D1D5DB"),
+                        rx.text("Preview not available for this file type.", color="#6B7280"),
+                        rx.text("Click download to view.", color="#9CA3AF", font_size="0.82rem"),
+                        spacing="2", align="center"), padding="3rem"))),
+                width="100%", min_height="200px", display="flex", align_items="center", justify_content="center"),
+            rx.hstack(rx.button("Close", variant="outline", on_click=TaskState.close_preview), justify="end", width="100%"),
+            spacing="3", padding="1.5rem", background_color="#FFFFFF", border_radius="12px", width="100%"), max_width="720px"),
         open=TaskState.show_preview_dialog, on_open_change=TaskState.set_preview_dialog_open)
 
 
 def _submissions_dialog() -> rx.Component:
-    """View past submissions and upload new work."""
     return rx.dialog.root(
-        rx.dialog.content(
+        rx.dialog.content(rx.vstack(
+            rx.hstack(rx.icon("folder-open", size=20, color="#22C55E"),
+                rx.text("Submissions", font_size="1.2rem", font_weight="900", color="#1A1A1A"), rx.spacer(),
+                rx.text(TaskState.submissions_task_title, color="#6B7280", font_size="0.85rem"), width="100%", align="center"),
+            rx.divider(border_color="rgba(34,197,94,0.25)"),
             rx.vstack(
-                rx.hstack(rx.icon("folder-open", size=20, color="#22C55E"),
-                          rx.text("Submissions", font_size="1.2rem", font_weight="900", color="#1A1A1A"),
-                          rx.spacer(),
-                          rx.text(TaskState.submissions_task_title, color="#6B7280", font_size="0.85rem"),
-                          width="100%", align="center"),
-                rx.divider(border_color="rgba(34,197,94,0.25)"),
-                rx.vstack(
-                    rx.text("Upload Your Work", color="#1A1A1A", font_size="0.88rem", font_weight="700"),
-                    rx.upload(
-                        rx.vstack(
-                            rx.icon("file-up", color="#9CA3AF", size=20),
-                            rx.text("Drop files or click to select", color="#6B7280", font_size="0.82rem"),
-                            spacing="2", align="center", padding="0.75rem",
-                        ),
-                        id="submission_upload",
-                        multiple=True,
-                        border="2px dashed rgba(34,197,94,0.35)",
-                        border_radius="10px", width="100%",
-                    ),
-                    rx.button(
-                        rx.hstack(rx.icon("send", size=14), rx.text("Submit Files", font_size="0.85rem"),
-                                  spacing="2", align="center"),
-                        color_scheme="green", size="2", width="100%",
-                        on_click=TaskState.upload_submission(
-                            rx.upload_files(upload_id="submission_upload")
-                        ),
-                    ),
-                    spacing="2", width="100%", padding="0.6rem",
-                    border="1px solid rgba(34,197,94,0.25)", border_radius="10px",
-                    background_color="rgba(34,197,94,0.04)",
-                ),
-                rx.divider(border_color="rgba(34,197,94,0.15)"),
-                rx.cond(
-                    TaskState.submissions_loading,
-                    rx.center(rx.spinner(), padding="2rem"),
-                    rx.cond(
-                        TaskState.submissions.length() > 0,
-                        rx.vstack(
-                            rx.foreach(
-                                TaskState.submissions,
-                                lambda s: rx.hstack(
-                                    rx.icon("file-check", size=16, color="#22C55E"),
-                                    rx.vstack(
-                                        rx.text(s["file_name"], font_weight="600", color="#1A1A1A", font_size="0.88rem"),
-                                        rx.text(s["uploaded_at"].to_string(), color="#9CA3AF", font_size="0.72rem"),
-                                        spacing="0",
-                                    ),
-                                    rx.spacer(),
-                                    rx.icon_button(rx.icon("eye", size=13), size="1", variant="ghost", color_scheme="green",
-                                                   on_click=TaskState.open_submission_preview(
-                                                       TaskState.submissions_task_id, s["id"], s["file_name"]),
-                                                   title="Preview"),
-                                    rx.icon_button(rx.icon("download", size=13), size="1", variant="ghost", color_scheme="green",
-                                                   on_click=TaskState.download_submission(
-                                                       TaskState.submissions_task_id, s["id"], s["file_name"]),
-                                                   title="Download"),
-                                    width="100%", align="center", padding="0.5rem",
-                                    border="1px solid rgba(34,197,94,0.2)", border_radius="8px",
-                                ),
-                            ),
-                            spacing="2", width="100%",
-                        ),
-                        rx.center(rx.text("No submissions yet.", color="#9CA3AF"), padding="2rem"),
-                    ),
-                ),
-                rx.hstack(rx.button("Close", variant="outline",
-                                    on_click=lambda: TaskState.set_submissions_dialog_open(False)),
-                          justify="end", width="100%"),
-                spacing="3", padding="1.5rem", background_color="#FFFFFF", border_radius="12px", width="100%",
-            ),
-            max_width="600px",
-        ),
-        open=TaskState.show_submissions_dialog, on_open_change=TaskState.set_submissions_dialog_open,
-    )
+                rx.text("Upload Your Work", color="#1A1A1A", font_size="0.88rem", font_weight="700"),
+                rx.upload(rx.vstack(rx.icon("file-up", color="#9CA3AF", size=20),
+                    rx.text("Drop files or click to select", color="#6B7280", font_size="0.82rem"),
+                    spacing="2", align="center", padding="0.75rem"),
+                    id="submission_upload", multiple=True, border="2px dashed rgba(34,197,94,0.35)", border_radius="10px", width="100%"),
+                rx.button(rx.hstack(rx.icon("send", size=14), rx.text("Submit Files", font_size="0.85rem"), spacing="2", align="center"),
+                    color_scheme="green", size="2", width="100%",
+                    on_click=TaskState.upload_submission(rx.upload_files(upload_id="submission_upload"))),
+                spacing="2", width="100%", padding="0.6rem", border="1px solid rgba(34,197,94,0.25)",
+                border_radius="10px", background_color="rgba(34,197,94,0.04)"),
+            rx.divider(border_color="rgba(34,197,94,0.15)"),
+            rx.cond(TaskState.submissions_loading, rx.center(rx.spinner(), padding="2rem"),
+                rx.cond(TaskState.submissions.length() > 0,
+                    rx.vstack(rx.foreach(TaskState.submissions, lambda s: rx.hstack(
+                        rx.icon("file-check", size=16, color="#22C55E"),
+                        rx.vstack(rx.text(s["file_name"], font_weight="600", color="#1A1A1A", font_size="0.88rem"),
+                            rx.text(s["uploaded_at"].to_string(), color="#9CA3AF", font_size="0.72rem"), spacing="0"),
+                        rx.spacer(),
+                        rx.icon_button(rx.icon("eye", size=13), size="1", variant="ghost", color_scheme="green",
+                            on_click=TaskState.open_submission_preview(TaskState.submissions_task_id, s["id"], s["file_name"]), title="Preview"),
+                        rx.icon_button(rx.icon("download", size=13), size="1", variant="ghost", color_scheme="green",
+                            on_click=TaskState.download_submission(TaskState.submissions_task_id, s["id"], s["file_name"]), title="Download"),
+                        width="100%", align="center", padding="0.5rem", border="1px solid rgba(34,197,94,0.2)", border_radius="8px")),
+                        spacing="2", width="100%"),
+                    rx.center(rx.text("No submissions yet.", color="#9CA3AF"), padding="2rem"))),
+            rx.hstack(rx.button("Close", variant="outline", on_click=lambda: TaskState.set_submissions_dialog_open(False)), justify="end", width="100%"),
+            spacing="3", padding="1.5rem", background_color="#FFFFFF", border_radius="12px", width="100%"), max_width="600px"),
+        open=TaskState.show_submissions_dialog, on_open_change=TaskState.set_submissions_dialog_open)
 
 
-# ── App header ──────────────────────────────────────────────────────────────
+# ── App header (greeting fix) ──────────────────────────────────────────────
 
 def _employee_app_header() -> rx.Component:
     return rx.box(
         rx.box(
             rx.vstack(
                 rx.hstack(
-                    rx.el.img(
-                        src="/taskme-logo-header.png",
-                        alt="TaskMe",
-                        style={
-                            "height": "64px",
-                            "width": "auto",
-                            "max_width": "min(100%, 280px)",
-                            "display": "block",
-                            "object_fit": "contain",
-                        },
-                    ),
+                    rx.el.img(src="/taskme-logo-header.png", alt="TaskMe",
+                        style={"height": "64px", "width": "auto", "max_width": "min(100%, 280px)", "display": "block", "object_fit": "contain"}),
                     rx.spacer(),
                     rx.hstack(
                         rx.hstack(
-                            rx.box(
-                                rx.text(
-                                    rx.cond(TaskState.name != "", TaskState.name[:1].to_string(), "?"),
-                                    color="white", font_weight="700", font_size="0.9rem", text_transform="uppercase",
-                                ),
-                                width="40px", height="40px", border_radius="50%",
-                                background_color="#1A2B56",
-                                display="flex", align_items="center", justify_content="center",
-                                flex_shrink="0", border="2px solid rgba(229, 163, 43, 0.45)",
-                            ),
+                            rx.box(rx.text(rx.cond(TaskState.name != "", TaskState.name[:1].to_string(), "?"),
+                                color="white", font_weight="700", font_size="0.9rem", text_transform="uppercase"),
+                                width="40px", height="40px", border_radius="50%", background_color="#1A2B56",
+                                display="flex", align_items="center", justify_content="center", flex_shrink="0",
+                                border="2px solid rgba(229, 163, 43, 0.45)"),
                             rx.text(TaskState.name, font_weight="600", font_size="0.95rem", color="#1A1A1A",
-                                    max_width="160px", overflow="hidden", text_overflow="ellipsis", white_space="nowrap"),
-                            spacing="3", align="center",
-                        ),
+                                max_width="160px", overflow="hidden", text_overflow="ellipsis", white_space="nowrap"),
+                            spacing="3", align="center"),
                         rx.button("Logout", on_click=TaskState.logout, color_scheme="orange", variant="outline", size="2"),
-                        spacing="2", align="center",
-                    ),
-                    width="100%", align="center", padding_y="0.85rem",
-                ),
+                        spacing="2", align="center"),
+                    width="100%", align="center", padding_y="0.85rem"),
                 rx.divider(border_color="rgba(15, 23, 42, 0.08)"),
                 rx.hstack(
                     rx.vstack(
                         rx.text(
-                            rx.Var.create("Good Morning, ") + TaskState.name,
+                            TaskState.greeting + rx.Var.create(", ") + TaskState.name,
                             font_size="1.5rem", font_weight="700", color="#1A1A1A",
-                            letter_spacing="-0.02em", line_height="1.25",
-                        ),
-                        rx.cond(
-                            TaskState.pending_tasks == 1,
+                            letter_spacing="-0.02em", line_height="1.25"),
+                        rx.cond(TaskState.pending_tasks == 1,
                             rx.text("You have 1 task pending today", color="#6B7280", font_size="0.95rem",
-                                    margin_top="0.35rem", line_height="1.4"),
-                            rx.text(
-                                rx.Var.create("You have ") + TaskState.pending_tasks.to_string() + " tasks pending today",
-                                color="#6B7280", font_size="0.95rem", margin_top="0.35rem", line_height="1.4",
-                            ),
-                        ),
+                                margin_top="0.35rem", line_height="1.4"),
+                            rx.text(rx.Var.create("You have ") + TaskState.pending_tasks.to_string() + " tasks pending today",
+                                color="#6B7280", font_size="0.95rem", margin_top="0.35rem", line_height="1.4")),
                         rx.text("My Tasks", font_size="1.15rem", font_weight="800", color="#374151",
-                                margin_top="0.5rem", letter_spacing="-0.01em"),
-                        spacing="0", align_items="start",
-                    ),
+                            margin_top="0.5rem", letter_spacing="-0.01em"),
+                        spacing="0", align_items="start"),
                     rx.spacer(),
                     rx.vstack(
-                        rx.button("Refresh", variant="outline", on_click=TaskState.load_employee_tasks,
-                                  size="2"),
-                        rx.select(
-                            ["all", "low", "medium", "high"],
-                            value=TaskState.priority_filter,
-                            on_change=TaskState.set_priority_filter,
-                            width="160px",
-                        ),
-                        spacing="2", align="end",
-                    ),
-                    width="100%", align="start", padding_y="1rem",
-                ),
-                spacing="0", width="100%",
-            ),
-            max_width="1200px", margin_x="auto", width="100%", padding_x="1.5rem",
-        ),
-        background_color="#FFFFFF",
-        border_bottom="1px solid rgba(15, 23, 42, 0.06)",
-        box_shadow="0 4px 24px -6px rgba(15, 23, 42, 0.1)",
-        position="sticky", top="0", z_index="30", width="100%",
-    )
+                        rx.button("Refresh", variant="outline", on_click=TaskState.load_employee_tasks, size="2"),
+                        rx.select(["all", "low", "medium", "high"], value=TaskState.priority_filter,
+                            on_change=TaskState.set_priority_filter, width="160px"),
+                        spacing="2", align="end"),
+                    width="100%", align="start", padding_y="1rem"),
+                spacing="0", width="100%"),
+            max_width="1200px", margin_x="auto", width="100%", padding_x="1.5rem"),
+        background_color="#FFFFFF", border_bottom="1px solid rgba(15, 23, 42, 0.06)",
+        box_shadow="0 4px 24px -6px rgba(15, 23, 42, 0.1)", position="sticky", top="0", z_index="30", width="100%")
 
 
 # ── Page ────────────────────────────────────────────────────────────────────
 
-@rx.page(route="/tasks", title="Zapp · My Tasks",
+@rx.page(route="/tasks", title="Zapp \u00b7 My Tasks",
          on_load=[TaskState.load_employee_tasks, TaskState.request_notification_permission])
 def employee_tasks() -> rx.Component:
     return rx.cond(
@@ -724,49 +380,25 @@ def employee_tasks() -> rx.Component:
                 _employee_app_header(),
                 rx.box(
                     rx.cond(TaskState.toast != "", rx.callout(TaskState.toast, color_scheme="blue"), rx.box()),
-                    rx.cond(
-                        TaskState.is_loading,
-                        rx.center(rx.spinner()),
+                    rx.cond(TaskState.is_loading, rx.center(rx.spinner()),
                         rx.vstack(
                             _employee_mini_stats(),
-                            # Task table in a card
                             rx.box(
-                                rx.cond(
-                                    TaskState.tasks.length() > 0,
-                                    rx.vstack(
-                                        _task_table(),
-                                        _employee_pagination(),
-                                        spacing="0", width="100%",
-                                    ),
-                                    rx.center(
-                                        rx.vstack(
-                                            rx.icon("inbox", size=40, color="#D1D5DB"),
-                                            rx.text("No tasks found.", color="#94A3B8", font_size="0.95rem"),
-                                            spacing="3", align="center",
-                                        ),
-                                        padding="3rem",
-                                    ),
-                                ),
-                                border="1px solid rgba(15, 23, 42, 0.06)",
-                                border_radius="16px",
+                                rx.cond(TaskState.tasks.length() > 0,
+                                    rx.vstack(_task_table(), _employee_pagination(), spacing="0", width="100%"),
+                                    rx.center(rx.vstack(rx.icon("inbox", size=40, color="#D1D5DB"),
+                                        rx.text("No tasks found.", color="#94A3B8", font_size="0.95rem"),
+                                        spacing="3", align="center"), padding="3rem")),
+                                border="1px solid rgba(15, 23, 42, 0.06)", border_radius="16px",
                                 background_color="#FFFFFF",
                                 box_shadow="0 4px 24px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04)",
-                                overflow="hidden",
-                                width="100%",
-                            ),
-                            spacing="4", width="100%",
-                        ),
-                    ),
+                                overflow="hidden", width="100%"),
+                            spacing="4", width="100%")),
                     _task_detail_dialog(),
                     _comments_dialog(),
                     _preview_dialog(),
                     _submissions_dialog(),
-                    # Lightweight poll
                     rx.moment(interval=30_000, on_change=TaskState.poll_summary, display="none"),
                     rx.moment(interval=10_000, on_change=TaskState.poll_notifications, display="none"),
-                    padding="1.5rem", max_width="1200px", margin_x="auto",
-                ),
-                background_color="#ECEEF3", min_height="100vh",
-            ),
-        ),
-    )
+                    padding="1.5rem", max_width="1200px", margin_x="auto"),
+                background_color="#ECEEF3", min_height="100vh")))

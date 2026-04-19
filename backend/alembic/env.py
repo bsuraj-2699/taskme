@@ -9,6 +9,7 @@ from core.config import settings
 from core.database import Base
 from models.attachment import TaskAttachment  # noqa: F401
 from models.eod_report import EODReport  # noqa: F401
+from models.monthly_report import MonthlyReport  # noqa: F401
 from models.notification import Notification  # noqa: F401
 from models.report_schedule import ReportSchedule  # noqa: F401
 from models.task import Task  # noqa: F401

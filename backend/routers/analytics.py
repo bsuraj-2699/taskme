@@ -5,7 +5,7 @@ from datetime import UTC, date, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import case, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from core.database import get_db

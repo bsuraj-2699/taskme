@@ -4,7 +4,7 @@ import enum
 from datetime import UTC, date, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import Date, DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -44,8 +44,7 @@ class Task(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 
-    notified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-
+    # Legacy single-attachment fields (retained for backwards-compat with old uploads).
     attachment_path: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
     attachment_name: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
 

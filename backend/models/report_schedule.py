@@ -9,9 +9,16 @@ from core.database import Base
 class ReportSchedule(Base):
     __tablename__ = "report_schedules"
 
-    # Singleton row (we always keep exactly one row with id=1)
+    # Singleton row (we always keep exactly one row with id=1).
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+
+    # Daily (EOD) schedule.
     report_time: Mapped[str] = mapped_column(String(5), nullable=False, default="18:00")  # HH:MM
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     timezone: Mapped[str] = mapped_column(String(50), nullable=False, default="Asia/Kolkata")
 
+    # Monthly schedule. Runs on `monthly_day` of each month at `monthly_report_time`
+    # (clamped to 28 if the month is shorter).
+    monthly_is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    monthly_day: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    monthly_report_time: Mapped[str] = mapped_column(String(5), default="09:00", nullable=False)

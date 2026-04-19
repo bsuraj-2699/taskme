@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import logging
 import os
+from contextlib import asynccontextmanager
 from typing import Any
 
+from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,10 +16,12 @@ from sqlalchemy import text
 
 from core.config import settings
 from core.database import SessionLocal
+from core.followup import run_followup_job
 from core.logging import setup_logging
 from core.scheduler import get_scheduler
 from models import (  # noqa: F401 — registers all mappers
     EODReport,
+    MonthlyReport,
     Notification,
     ReportSchedule,
     Task,
@@ -26,77 +30,74 @@ from models import (  # noqa: F401 — registers all mappers
     TaskSubmission,
     User,
 )
-from routers import analytics, auth, comments, notifications, reports, submissions, tasks, users
-from routers import summary
-from routers.reports import _run_report_job, _get_or_create_schedule
-from core.followup import run_followup_job
-from apscheduler.triggers.cron import CronTrigger
-from apscheduler.triggers.interval import IntervalTrigger
+from routers import (
+    analytics,
+    auth,
+    comments,
+    notifications,
+    reports,
+    submissions,
+    summary,
+    tasks,
+    users,
+)
+from routers.reports import (
+    _get_or_create_schedule,
+    _reschedule_eod,
+    _reschedule_monthly,
+)
 
 setup_logging()
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Taskme API", version="1.1.0")
 
-
-@app.on_event("startup")
-def _ensure_uploads_dir() -> None:
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application startup/shutdown. Replaces the deprecated @app.on_event hooks."""
+    # ── Startup ────────────────────────────────────────────────────────────
+    # 1. Ensure uploads dir exists.
     os.makedirs(os.getenv("UPLOADS_DIR", "/app/uploads"), exist_ok=True)
 
-
-@app.on_event("startup")
-def _start_eod_scheduler() -> None:
-    """Start APScheduler and schedule the EOD report job based on DB settings."""
-    try:
-        scheduler = get_scheduler()
-        if not scheduler.running:
+    # 2. Start APScheduler and register all recurring jobs.
+    scheduler = get_scheduler()
+    if not scheduler.running:
+        try:
             scheduler.start()
+        except Exception:
+            logger.exception("Failed to start APScheduler")
 
+    # Daily + monthly report jobs (driven by DB-persisted schedule).
+    try:
         with SessionLocal() as db:
             sched = _get_or_create_schedule(db)
-            if sched.is_active:
-                h, m = sched.report_time.split(":")
-                scheduler.add_job(
-                    func=_run_report_job,
-                    trigger=CronTrigger(hour=int(h), minute=int(m), timezone=sched.timezone),
-                    id="eod_report",
-                    replace_existing=True,
-                )
-            else:
-                try:
-                    scheduler.remove_job("eod_report")
-                except Exception:
-                    pass
+            _reschedule_eod(sched)
+            _reschedule_monthly(sched)
     except Exception:
-        logger.exception("Failed to start EOD scheduler")
+        logger.exception("Failed to schedule report jobs")
 
-
-@app.on_event("startup")
-def _start_followup_scheduler() -> None:
-    """Schedule the auto follow-up job to run every hour."""
+    # Follow-up job runs every hour and never depends on DB state.
     try:
-        scheduler = get_scheduler()
-        if not scheduler.running:
-            scheduler.start()
         scheduler.add_job(
             func=run_followup_job,
             trigger=IntervalTrigger(hours=1),
             id="followup_check",
             replace_existing=True,
-            max_instances=1,   # Prevent overlapping runs
+            max_instances=1,
         )
     except Exception:
-        logger.exception("Failed to start follow-up scheduler")
+        logger.exception("Failed to schedule follow-up job")
 
+    yield
 
-@app.on_event("shutdown")
-def _stop_scheduler() -> None:
+    # ── Shutdown ───────────────────────────────────────────────────────────
     try:
-        scheduler = get_scheduler()
         if scheduler.running:
             scheduler.shutdown(wait=False)
     except Exception:
         logger.exception("Failed to shutdown scheduler")
+
+
+app = FastAPI(title="Taskme API", version="1.2.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -122,7 +123,10 @@ async def validation_exception_handler(_: Request, exc: RequestValidationError) 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(_: Request, exc: Exception) -> JSONResponse:
     logger.exception("Unhandled exception: %s", exc)
-    return JSONResponse(status_code=500, content={"error": True, "message": "Internal server error", "code": 500})
+    return JSONResponse(
+        status_code=500,
+        content={"error": True, "message": "Internal server error", "code": 500},
+    )
 
 
 @app.get("/api/health")
@@ -132,7 +136,10 @@ def health() -> Any:
             db.execute(text("SELECT 1"))
         return {"status": "ok", "db": "connected"}
     except Exception:
-        return JSONResponse(status_code=503, content={"status": "degraded", "db": "disconnected"})
+        return JSONResponse(
+            status_code=503,
+            content={"status": "degraded", "db": "disconnected"},
+        )
 
 
 app.include_router(auth.router)

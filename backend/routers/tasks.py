@@ -7,7 +7,7 @@ import os
 import shutil
 from pathlib import Path
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, Query, UploadFile
 from fastapi.responses import FileResponse
@@ -76,18 +76,33 @@ async def _validate_file_size(file: UploadFile) -> bytes:
     return data
 
 
+def _unique_on_disk_name(original_name: str) -> str:
+    """Return a filename that is unique on disk.
+
+    Prepending a short UUID avoids overwriting an existing file when two uploads
+    share the same basename (common when users upload from the same template).
+    The original basename is preserved (with extension) so the user still sees a
+    recognisable file when downloading.
+    """
+    base = os.path.basename(original_name or "file")
+    stem, ext = os.path.splitext(base)
+    # Keep the UUID short-ish to avoid bloating paths; 8 hex chars is plenty
+    # for collision resistance within a single task directory.
+    return f"{uuid4().hex[:8]}_{stem}{ext}" if stem else uuid4().hex
+
+
 def _cleanup_task_files(task_id: UUID) -> None:
     """Remove upload directory for a task from disk."""
     task_dir = UPLOADS_DIR / str(task_id)
     if task_dir.exists() and task_dir.is_dir():
         shutil.rmtree(task_dir, ignore_errors=True)
-    # Also clean submission files
     sub_dir = UPLOADS_DIR / "submissions" / str(task_id)
     if sub_dir.exists() and sub_dir.is_dir():
         shutil.rmtree(sub_dir, ignore_errors=True)
 
 
 # ── Static routes MUST come before /{task_id} ──────────────────────────────
+
 
 @router.get("/my", response_model=PaginatedTasks)
 def my_tasks(
@@ -150,6 +165,7 @@ def my_tasks(
 
 # ── Collection routes ───────────────────────────────────────────────────────
 
+
 @router.get("/", response_model=PaginatedTasks)
 def list_tasks(
     _: CurrentUser = Depends(require_role("ceo")),
@@ -166,7 +182,6 @@ def list_tasks(
         q = select(Task)
         count_q = select(func.count()).select_from(Task)
 
-        # Employee filter
         if assigned_to and assigned_to != "all":
             try:
                 uid = UUID_type(assigned_to)
@@ -175,7 +190,6 @@ def list_tasks(
             except (ValueError, TypeError):
                 pass
 
-        # Status filter — "overdue" is a virtual filter based on deadline
         if status and status != "all":
             if status == "overdue":
                 today = date_type.today()
@@ -216,7 +230,6 @@ def create_task(
     try:
         _ensure_employee_exists(db, payload.assigned_to)
 
-        # Validate priority
         priority_val = payload.priority or "medium"
         if priority_val not in ("low", "medium", "high"):
             priority_val = "medium"
@@ -255,6 +268,7 @@ def create_task(
 
 
 # ── Item routes ─────────────────────────────────────────────────────────────
+
 
 @router.put("/{task_id}", response_model=TaskOut)
 def update_task(
@@ -392,13 +406,19 @@ def delete_task(
     db: Session = Depends(get_db),
 ) -> Any:
     try:
-        # Clean up files from disk BEFORE deleting from DB
-        _cleanup_task_files(task_id)
+        # Verify existence first so we don't nuke files for a task that isn't there.
+        task = _get_task_or_404(db, task_id)
+        _ = task  # just the existence check
 
         res = db.execute(delete(Task).where(Task.id == task_id))
         if res.rowcount == 0:
             raise http_error(404, "Task not found", 404)
         db.commit()
+
+        # Clean up files AFTER successful DB delete so we never orphan files
+        # when the DB delete fails (or remove them pre-verification).
+        _cleanup_task_files(task_id)
+
         return {"ok": True}
     except Exception as e:
         db.rollback()
@@ -409,6 +429,7 @@ def delete_task(
 
 
 # ── Attachment routes ───────────────────────────────────────────────────────
+
 
 @router.post("/{task_id}/attach", response_model=TaskOut)
 async def attach_files(
@@ -429,22 +450,25 @@ async def attach_files(
 
         for file in files:
             data = await _validate_file_size(file)
-            safe_name = os.path.basename(file.filename or "attachment")
-            dest_path = dest_dir / safe_name
+            # Display name = original basename; on-disk name = UUID-prefixed to
+            # prevent silent overwrites when two files share a name.
+            display_name = os.path.basename(file.filename or "attachment")
+            disk_name = _unique_on_disk_name(display_name)
+            dest_path = dest_dir / disk_name
 
             dest_path.write_bytes(data)
 
             attachment = TaskAttachment(
                 task_id=task.id,
-                file_name=safe_name,
+                file_name=display_name,
                 file_path=str(dest_path),
                 file_size=len(data),
             )
             db.add(attachment)
 
-            # Keep legacy single-attachment fields updated to the last file
+            # Keep legacy single-attachment fields updated to the last file.
             task.attachment_path = str(dest_path)
-            task.attachment_name = safe_name
+            task.attachment_name = display_name
 
         db.commit()
         db.refresh(task)
@@ -568,7 +592,7 @@ def preview_attachment(
         raise http_error(500, "Failed to preview attachment", 500)
 
 
-# Legacy single-file download (kept for backwards compat)
+# Legacy single-file download (kept for backwards compat).
 @router.get("/{task_id}/download")
 def download_file(
     task_id: UUID,
@@ -605,6 +629,9 @@ def update_progress(
     user: CurrentUser = Depends(require_role("employee")),
     db: Session = Depends(get_db),
 ) -> Any:
+    """Legacy progress endpoint — still used by Mark Done (sends 100) and CEO
+    progress updates. Reaching 100 flips status to `done` automatically.
+    """
     try:
         from datetime import UTC, datetime as dt
         task = _get_task_or_404(db, task_id)
@@ -620,7 +647,6 @@ def update_progress(
         else:
             task.status = TaskStatus.pending
 
-        # Bump activity timestamp
         task.last_activity_at = dt.now(UTC)
 
         db.commit()
@@ -631,4 +657,51 @@ def update_progress(
         if hasattr(e, "status_code"):
             raise
         logger.exception("update progress failed")
+        raise http_error(500, "Failed to update progress", 500)
+
+
+@router.patch("/{task_id}/progress_only", response_model=TaskOut)
+def update_progress_only(
+    task_id: UUID,
+    payload: ProgressUpdate,
+    user: CurrentUser = Depends(require_role("employee")),
+    db: Session = Depends(get_db),
+) -> Any:
+    """Progress-only update used by the employee slider.
+
+    Unlike `/progress`, this endpoint never flips a task to `done` — even when
+    the employee drags the slider to 100, the task stays `in_progress`. The
+    employee must still click Mark Done to finalise the task.
+
+    If the task is already `done`, we leave it alone (progress stays at 100).
+    """
+    try:
+        from datetime import UTC, datetime as dt
+        task = _get_task_or_404(db, task_id)
+        if task.assigned_to != user.id:
+            raise http_error(403, "Forbidden", 403)
+
+        # Don't regress a completed task.
+        if task.status == TaskStatus.done:
+            return task
+
+        new_progress = max(0, min(100, int(payload.progress)))
+        task.progress = new_progress
+
+        # Only adjust status between pending and in_progress; never flip to done.
+        if new_progress > 0 and task.status == TaskStatus.pending:
+            task.status = TaskStatus.in_progress
+        elif new_progress == 0 and task.status == TaskStatus.in_progress:
+            task.status = TaskStatus.pending
+
+        task.last_activity_at = dt.now(UTC)
+
+        db.commit()
+        db.refresh(task)
+        return task
+    except Exception as e:
+        db.rollback()
+        if hasattr(e, "status_code"):
+            raise
+        logger.exception("update progress_only failed")
         raise http_error(500, "Failed to update progress", 500)

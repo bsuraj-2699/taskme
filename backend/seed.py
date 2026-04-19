@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from core.database import SessionLocal
 from core.security import hash_password
-from models.task import Task, TaskStatus
+from models.task import Task, TaskPriority, TaskStatus
 from models.user import User, UserRole
 
 
@@ -60,30 +60,43 @@ def run() -> None:
         tasks = [
             Task(
                 title="Prepare onboarding checklist",
-                description="Draft onboarding steps for new hires.",
+                description="Draft onboarding steps for new hires, including IT provisioning, HR paperwork, and first-week schedule.",
                 assigned_to=emp1.id,
                 assigned_by=ceo.id,
                 status=TaskStatus.pending,
+                priority=TaskPriority.medium,
                 progress=0,
                 deadline=today + timedelta(days=7),
             ),
             Task(
                 title="Client follow-up emails",
-                description="Send follow-up emails to 3 clients.",
+                description="Send follow-up emails to 3 clients regarding the Q2 contract renewals.",
                 assigned_to=emp2.id,
                 assigned_by=ceo.id,
                 status=TaskStatus.in_progress,
+                priority=TaskPriority.high,
                 progress=45,
                 deadline=today + timedelta(days=3),
             ),
             Task(
                 title="Quarterly report draft",
-                description="Create initial draft for quarterly report.",
+                description="Create initial draft for quarterly report with KPIs, wins, and risks.",
                 assigned_to=emp3.id,
                 assigned_by=ceo.id,
                 status=TaskStatus.done,
+                priority=TaskPriority.high,
                 progress=100,
                 deadline=today - timedelta(days=1),
+            ),
+            Task(
+                title="Update office plant inventory",
+                description="Low-priority task: catalogue current plants by room and note any replacements needed.",
+                assigned_to=emp1.id,
+                assigned_by=ceo.id,
+                status=TaskStatus.pending,
+                priority=TaskPriority.low,
+                progress=0,
+                deadline=today + timedelta(days=14),
             ),
         ]
         db.add_all(tasks)
@@ -94,4 +107,3 @@ def run() -> None:
 
 if __name__ == "__main__":
     run()
-
